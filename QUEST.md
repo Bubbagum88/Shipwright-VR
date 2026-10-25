@@ -8,7 +8,7 @@ This is a Quest port of [Ship of Harkinian VR](https://github.com/ShinyWindow/Sh
 
 ## What you need
 
-- A Meta Quest 3 (Quest 3S and Quest Pro should work but are untested).
+- A Meta Quest 3 (Quest 3S and Quest Pro should work but are untested). Quest 1 works with a small manifest change, see [Quest 1](#quest-1).
 - A computer (Windows, Mac or Linux) and a USB-C cable to connect the Quest.
 - Your own Ocarina of Time ROM (`.z64`, `.n64` or `.v64`). Check it's a supported version at [ship.equipment](https://ship.equipment/).
 
@@ -68,10 +68,31 @@ If you add, remove or update pack files later, the game notices and re-optimizes
 
 Left-handed mode, hand position, HUD placement and more are in **VR Settings**.
 
+## Quest 1
+
+The game runs well on an original **Meta Quest 1** (tested with v1.3), including building the game data from NTSC 1.2 and PAL Master Quest ROMs. The release APK doesn't start on it as-is, though: it closes right away at launch.
+
+**Why:** the Quest 1's VR runtime reads the `com.oculus.supportedDevices` list in the app's `AndroidManifest.xml`, and aborts in `xrCreateInstance` when the list contains a headset name it doesn't know. The crash log (`adb logcat -b crash`) shows:
+
+```
+Abort message: 'Unknown device to support: quest3'
+  #11 libopenxr_loader.so (xrCreateInstance+28)
+  #12 libsoh.so (vr_init()+1276)
+```
+
+**Workaround:** change that manifest value to names the Quest 1 knows, `quest|quest2`, and re-sign the APK. When building from source, that's this line in `Android/app/src/main/AndroidManifest.xml`:
+
+```xml
+<meta-data android:name="com.oculus.supportedDevices" android:value="quest|quest2"/>
+```
+
+Because a re-signed APK has a different signature, uninstall the original first (`adb uninstall com.questship.sohvr`). Your ROM and the `SOHVR` folder are kept. Skip the HD texture pack on Quest 1, which only has 4 GB of RAM.
+
 ## Troubleshooting
 
 - **Stuck on loading dots for more than 3 minutes on first launch:** make sure your ROM is in the Quest's **Download** folder (or in `SOHVR`) and is a supported version, then restart the game.
 - **Can't find the game in the headset:** it's under **App Library > Unknown Sources**.
+- **Closes immediately on a Quest 1:** see [Quest 1](#quest-1) above.
 - **HD textures don't show:** check **Settings > Mod Menu > Enable Mods**, and that the `.otr` files are directly in `SOHVR/mods`.
 
 ## Building from source
