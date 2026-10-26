@@ -2489,13 +2489,137 @@ static void EnOssan_DrawVrCursor(PlayState* play, EnOssan* this) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
+// End dot of the shop laser: an 8-sided disc, radius 10 (scaled at draw time), billboarded.
+static Vtx sVrShopDotVtx[9] = {
+    VTX(0, 0, 0, 0, 0, 255, 255, 255, 255),    VTX(10, 0, 0, 0, 0, 255, 255, 255, 255),
+    VTX(7, 7, 0, 0, 0, 255, 255, 255, 255),    VTX(0, 10, 0, 0, 0, 255, 255, 255, 255),
+    VTX(-7, 7, 0, 0, 0, 255, 255, 255, 255),   VTX(-10, 0, 0, 0, 0, 255, 255, 255, 255),
+    VTX(-7, -7, 0, 0, 0, 255, 255, 255, 255),  VTX(0, -10, 0, 0, 0, 255, 255, 255, 255),
+    VTX(7, -7, 0, 0, 0, 255, 255, 255, 255),
+};
+
+static void EnOssan_SetVtx(Vtx* vtx, f32 x, f32 y, f32 z) {
+    vtx->v.ob[0] = x;
+    vtx->v.ob[1] = y;
+    vtx->v.ob[2] = z;
+    vtx->v.flag = 0;
+    vtx->v.tc[0] = vtx->v.tc[1] = 0;
+    vtx->v.cn[0] = vtx->v.cn[1] = vtx->v.cn[2] = vtx->v.cn[3] = 255;
+}
+
+// Laser from the pointing hand while the hand can pick items (facing the shopkeeper or browsing a
+// shelf). When the ray is on an item, the beam stops at it in the cursor color with a dot on the
+// end; otherwise it is a short, faint white beam showing where the hand points.
+static void EnOssan_DrawVrPointer(PlayState* play, EnOssan* this) {
+    s32 hand = CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_LEFT : VR_HAND_RIGHT;
+    // Vertices are built at 10x and scaled down, so the thin beam survives the s16 vertex coords.
+    const f32 vtxScale = 10.0f;
+    const f32 halfWidth = 0.4f;
+    float pos[3];
+    float dir[3];
+    f32 len = 80.0f;
+    u8 pointed;
+    u8 r = 255, g = 255, b = 255, a = 90;
+    Vec3f side, up;
+    f32 sideLen;
+    Vtx* vtx;
+    s32 i;
+
+    if ((this->stateFlag != OSSAN_STATE_FACING_SHOPKEEPER) && (this->stateFlag != OSSAN_STATE_BROWSE_LEFT_SHELF) &&
+        (this->stateFlag != OSSAN_STATE_BROWSE_RIGHT_SHELF)) {
+        return;
+    }
+    if (!VR_GetAimRay(hand, pos, dir)) {
+        return;
+    }
+    pointed = EnOssan_VrPointedSlot(this);
+    if (pointed != CURSOR_INVALID) {
+        Vec3f* target = &this->shelfSlots[pointed]->actor.focus.pos;
+
+        len = ((target->x - pos[0]) * dir[0]) + ((target->y - pos[1]) * dir[1]) + ((target->z - pos[2]) * dir[2]);
+        r = this->cursorColorR;
+        g = this->cursorColorG;
+        b = this->cursorColorB;
+        a = 200;
+    }
+    len = CLAMP(len, 1.0f, 300.0f);
+
+    // Two crossed quads along the ray, so the beam has width from every viewing angle.
+    side.x = -dir[2];
+    side.y = 0.0f;
+    side.z = dir[0];
+    sideLen = sqrtf(SQ(side.x) + SQ(side.z));
+    if (sideLen < 0.001f) {
+        side.x = 1.0f;
+        side.z = 0.0f;
+        sideLen = 1.0f;
+    }
+    side.x *= halfWidth * vtxScale / sideLen;
+    side.z *= halfWidth * vtxScale / sideLen;
+    up.x = (dir[1] * side.z) - (dir[2] * side.y);
+    up.y = (dir[2] * side.x) - (dir[0] * side.z);
+    up.z = (dir[0] * side.y) - (dir[1] * side.x);
+
+    vtx = Graph_Alloc(play->state.gfxCtx, 8 * sizeof(Vtx));
+    for (i = 0; i < 2; i++) {
+        Vec3f* w = (i == 0) ? &side : &up;
+        f32 ex = dir[0] * len * vtxScale;
+        f32 ey = dir[1] * len * vtxScale;
+        f32 ez = dir[2] * len * vtxScale;
+
+        EnOssan_SetVtx(&vtx[i * 4 + 0], -w->x, -w->y, -w->z);
+        EnOssan_SetVtx(&vtx[i * 4 + 1], w->x, w->y, w->z);
+        EnOssan_SetVtx(&vtx[i * 4 + 2], ex - w->x, ey - w->y, ez - w->z);
+        EnOssan_SetVtx(&vtx[i * 4 + 3], ex + w->x, ey + w->y, ez + w->z);
+    }
+
+    OPEN_DISPS(play->state.gfxCtx);
+    Matrix_Push();
+    gDPPipeSync(POLY_XLU_DISP++);
+    gDPSetCycleType(POLY_XLU_DISP++, G_CYC_1CYCLE);
+    gDPSetCombineMode(POLY_XLU_DISP++, G_CC_PRIMITIVE, G_CC_PRIMITIVE);
+    gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, r, g, b, a);
+    gSPClearGeometryMode(POLY_XLU_DISP++, G_CULL_BOTH | G_LIGHTING | G_FOG);
+    gSPTexture(POLY_XLU_DISP++, 0, 0, 0, G_TX_RENDERTILE, G_OFF);
+
+    // Beam: depth-tested, so the counter and shelves hide it like any real object.
+    gDPSetRenderMode(POLY_XLU_DISP++, G_RM_ZB_XLU_SURF, G_RM_ZB_XLU_SURF2);
+    Matrix_Translate(pos[0], pos[1], pos[2], MTXMODE_NEW);
+    Matrix_Scale(1.0f / vtxScale, 1.0f / vtxScale, 1.0f / vtxScale, MTXMODE_APPLY);
+    gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+    gSPVertex(POLY_XLU_DISP++, (uintptr_t)vtx, 8, 0);
+    gSP2Triangles(POLY_XLU_DISP++, 0, 2, 1, 0, 1, 2, 3, 0);
+    gSP2Triangles(POLY_XLU_DISP++, 4, 6, 5, 0, 5, 6, 7, 0);
+
+    // Dot on the pointed item: drawn over everything so it never sinks into the item model.
+    if (pointed != CURSOR_INVALID) {
+        gDPPipeSync(POLY_XLU_DISP++);
+        gDPSetRenderMode(POLY_XLU_DISP++, G_RM_XLU_SURF, G_RM_XLU_SURF2);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, 230);
+        Matrix_Translate(pos[0] + dir[0] * len, pos[1] + dir[1] * len, pos[2] + dir[2] * len, MTXMODE_NEW);
+        Matrix_ReplaceRotation(&play->billboardMtxF);
+        Matrix_Scale(0.2f, 0.2f, 0.2f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+        gSPVertex(POLY_XLU_DISP++, (uintptr_t)sVrShopDotVtx, 9, 0);
+        gSP2Triangles(POLY_XLU_DISP++, 0, 1, 2, 0, 0, 2, 3, 0);
+        gSP2Triangles(POLY_XLU_DISP++, 0, 3, 4, 0, 0, 4, 5, 0);
+        gSP2Triangles(POLY_XLU_DISP++, 0, 5, 6, 0, 0, 6, 7, 0);
+        gSP2Triangles(POLY_XLU_DISP++, 0, 7, 8, 0, 0, 8, 1, 0);
+    }
+    Matrix_Pop();
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
 void EnOssan_DrawCursor(PlayState* play, EnOssan* this, f32 x, f32 y, f32 z, u8 drawCursor) {
     s32 ulx, uly, lrx, lry;
     f32 w;
     s32 dsdx;
 
-    if (drawCursor != 0 && EnOssan_VrShopActive()) {
-        EnOssan_DrawVrCursor(play, this);
+    if (EnOssan_VrShopActive()) {
+        EnOssan_DrawVrPointer(play, this);
+        if (drawCursor != 0) {
+            EnOssan_DrawVrCursor(play, this);
+        }
         return;
     }
 
