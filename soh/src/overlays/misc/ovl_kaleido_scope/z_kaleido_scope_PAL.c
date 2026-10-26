@@ -1311,8 +1311,12 @@ void KaleidoScope_HandlePageToggles(PauseContext* pauseCtx, Input* input) {
         return;
     }
 
-    // SOH [VR] Clicking the left/right page arrows (info panel quads 2 and 3) with the pointer.
-    if (CHECK_BTN_ALL(input->press.button, BTN_A)) {
+    // SOH [VR] Clicking the left/right page arrows (info panel quads 2 and 3) with the pointer's
+    // trigger (padmgr turns it into A); the A button itself never turns pages.
+    float vrPtrX, vrPtrY;
+    int vrPtrHand;
+    if (CHECK_BTN_ALL(input->press.button, BTN_A) && VR_IsInitialized() &&
+        VR_GetFlatPointer(&vrPtrX, &vrPtrY, &vrPtrHand) && (VR_GetControllerButton(vrPtrHand) & VR_BTN_TRIGGER)) {
         s16 vrArrow = KaleidoScope_VrPointerHitQuad(KALEIDO_VR_PTR_INFO, pauseCtx->infoPanelVtx, 2, 2);
         if (vrArrow >= 0) {
             KaleidoScope_SwitchPage(pauseCtx, (vrArrow == 2) ? 0 : 2);
@@ -3588,8 +3592,9 @@ s16 KaleidoScope_VrPointerHitQuad(s32 space, Vtx* vtx, s16 first, s16 count) {
 }
 
 // The slot (0..count-1) the cursor should jump to this frame, or -1. Fires when the pointer moves
-// onto a new slot, and again on an A press so the click acts on the slot under the pointer even if
-// the stick moved the cursor away meanwhile. Otherwise the stick keeps full control.
+// onto a new slot, and on a TRIGGER click (padmgr turns the pointing hand's trigger into A) so the
+// click acts on the slot under the pointer even if the stick moved the cursor away meanwhile. The
+// A button itself always acts on the cursor wherever the stick or pointer left it.
 s16 KaleidoScope_VrPointerHover(s32 space, Vtx* vtx, s16 count, Input* input) {
     s16 hit = KaleidoScope_VrPointerHitQuad(space, vtx, 0, count);
     s16 last = sVrPtrLastHover[space];
@@ -3597,16 +3602,17 @@ s16 KaleidoScope_VrPointerHover(s32 space, Vtx* vtx, s16 count, Input* input) {
     s32 hand;
 
     sVrPtrLastHover[space] = hit;
-    if (hit < 0) {
+    if ((hit < 0) || !KaleidoScope_VrPointerGet(&px, &py, &hand)) {
         return -1;
     }
     if (hit != last) {
-        if (KaleidoScope_VrPointerGet(&px, &py, &hand)) {
-            VR_TriggerHaptic(hand, 0.15f, 0.0f, 12.0f);
-        }
+        VR_TriggerHaptic(hand, 0.15f, 0.0f, 12.0f);
         return hit;
     }
-    return CHECK_BTN_ALL(input->press.button, BTN_A) ? hit : -1;
+    if (CHECK_BTN_ALL(input->press.button, BTN_A) && (VR_GetControllerButton(hand) & VR_BTN_TRIGGER)) {
+        return hit;
+    }
+    return -1;
 }
 
 static void KaleidoScope_VrPointerDraw(PlayState* play) {
