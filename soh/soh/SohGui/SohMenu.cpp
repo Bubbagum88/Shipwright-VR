@@ -128,10 +128,9 @@ void SohMenu::AddMenuElements() {
     }
 
 #if defined(__ANDROID__)
-    // QuestShip: hide (not remove) what doesn't apply to the standalone Quest build: the Dev Tools
-    // section and the phone/desktop-only sidebars. (Network stays: online co-op works on Quest.)
+    // QuestShip: hide (not remove) what doesn't apply to the standalone Quest build: the
+    // phone/desktop-only sidebars. (Network and Dev Tools stay.)
     // The sections must still exist while the init functions above register into them.
-    std::erase(menuOrder, std::string("Dev Tools"));
     for (const char* sidebar : { "Touch Controls", "Input Viewer" }) {
         std::erase(menuEntries["Settings"].sidebarOrder, std::string(sidebar));
     }
