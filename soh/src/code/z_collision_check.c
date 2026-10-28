@@ -3,6 +3,7 @@
 #include "overlays/effects/ovl_Effect_Ss_HitMark/z_eff_ss_hitmark.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/vr-combat/VrCombat.h"
+#include <vr_interface.h>
 #include <assert.h>
 
 typedef s32 (*ColChkResetFunc)(PlayState*, Collider*);
@@ -2715,6 +2716,20 @@ void CollisionCheck_SetOCvsOC(Collider* left, ColliderInfo* leftInfo, Vec3f* lef
     }
     if (leftActor == NULL || rightActor == NULL || left->ocFlags1 & OC1_NO_PUSH || right->ocFlags1 & OC1_NO_PUSH) {
         return;
+    }
+    // SOH [VR] First person: friendly NPCs stop pushing Link at their own radius instead of theirs
+    // plus his, so you can stand close enough to reach them (e.g. pat Saria's head). The touch
+    // flags above are still set, so talking and anything else that checks contact is unchanged.
+    if (VR_IsInitialized() && VR_GetFirstPerson()) {
+        Actor* vrNpc = (leftActor->category == ACTORCAT_PLAYER)    ? rightActor
+                       : (rightActor->category == ACTORCAT_PLAYER) ? leftActor
+                                                                   : NULL;
+        if ((vrNpc != NULL) && (vrNpc->category == ACTORCAT_NPC)) {
+            overlap -= 12.0f; // Link's body cylinder radius (z_player.c)
+            if (overlap <= 0.0f) {
+                return;
+            }
+        }
     }
     rightMassType = CollisionCheck_GetMassType(leftActor->colChkInfo.mass);
     leftMassType = CollisionCheck_GetMassType(rightActor->colChkInfo.mass);

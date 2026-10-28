@@ -978,6 +978,13 @@ static s32 EnOssan_VrShopActive(void) {
     return VR_IsInitialized() && VR_GetFirstPerson() && !VR_IsFlatScreen() && CVarGetInteger("gVrShopPointer", 1);
 }
 
+// Third-person VR: the 2D cursor is placed from the game camera's projection, but the headset view
+// adds your head turn and drops the camera's pitch, so it misses the item. The in-world cursor is
+// drawn instead (stick controls; hand pointing stays first person only).
+static s32 EnOssan_VrWorldCursorActive(void) {
+    return VR_IsInitialized() && !VR_IsFlatScreen() && CVarGetInteger("gVrShopPointer", 1);
+}
+
 // The stocked slot (0-7) closest to the dominant hand's aim ray, or CURSOR_INVALID when the hand
 // points at no item. Slots 0-3 are the right shelf, 4-7 the left.
 static u8 EnOssan_VrPointedSlot(EnOssan* this) {
@@ -2617,6 +2624,12 @@ void EnOssan_DrawCursor(PlayState* play, EnOssan* this, f32 x, f32 y, f32 z, u8 
 
     if (EnOssan_VrShopActive()) {
         EnOssan_DrawVrPointer(play, this);
+        if (drawCursor != 0) {
+            EnOssan_DrawVrCursor(play, this);
+        }
+        return;
+    }
+    if (EnOssan_VrWorldCursorActive()) {
         if (drawCursor != 0) {
             EnOssan_DrawVrCursor(play, this);
         }
