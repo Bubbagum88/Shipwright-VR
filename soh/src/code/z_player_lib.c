@@ -1878,13 +1878,14 @@ void Player_DrawHookshotReticle(PlayState* play, Player* this, f32 hookshotRange
     D_801260C8.z = hookshotRange;
     Matrix_MultVec3f(&D_801260C8, &hookshotEnd);
 
-    // SOH [VR] In first person a held projectile (hook, arrow, seed) flies along the motion-aim ray,
-    // not along the hand model's axis, so the reticle casts along that same ray from where the
-    // projectile sits (already placed by Player_VrAimHeldProjectile). The range is in hand model
-    // units, which Link's model scale converts to world units.
+    // SOH [VR] In first person a held arrow or seed flies along the motion-aim ray, not along the hand
+    // model's axis, so the reticle casts along that same ray from where the projectile sits (already
+    // placed by Player_VrAimHeldProjectile). The hookshot fires down its barrel, which the vanilla
+    // cast above already follows. The range is in hand model units, which Link's model scale
+    // converts to world units.
     float vrRayPos[3];
     float vrRayDir[3];
-    if ((this->heldActor != NULL) && Player_VrHeldAimRay(vrRayPos, vrRayDir)) {
+    if ((this->heldActor != NULL) && !Player_HoldsHookshot(this) && Player_VrHeldAimRay(vrRayPos, vrRayDir)) {
         f32 vrRange = hookshotRange * this->actor.scale.x;
         hookshotStart = this->heldActor->world.pos;
         hookshotEnd.x = hookshotStart.x + (vrRayDir[0] * vrRange);
@@ -2013,20 +2014,15 @@ static s32 Player_VrHeldAimRay(float vrRayPos[3], float vrRayDir[3]) {
     return VR_GetAimRay(vrWeaponHand, vrRayPos, vrRayDir);
 }
 
-// keepMuzzle: the held actor stays where the weapon model put it (the hookshot's hook sits at the
-// barrel's tip, and its chain is drawn back to the gun) and only its direction follows the aim ray.
-static void Player_VrAimHeldProjectile(Player* this, Actor* heldActor, s32 keepMuzzle) {
+static void Player_VrAimHeldProjectile(Player* this, Actor* heldActor) {
     float vrRayPos[3];
     float vrRayDir[3];
     if (!Player_VrHeldAimRay(vrRayPos, vrRayDir)) {
         return;
     }
     Vec3f vrOrigin = { vrRayPos[0], vrRayPos[1], vrRayPos[2] };
-    if (keepMuzzle) {
-        vrOrigin = heldActor->world.pos;
-    }
-    Vec3f vrTarget = { vrOrigin.x + vrRayDir[0] * 100.0f, vrOrigin.y + vrRayDir[1] * 100.0f,
-                       vrOrigin.z + vrRayDir[2] * 100.0f };
+    Vec3f vrTarget = { vrRayPos[0] + vrRayDir[0] * 100.0f, vrRayPos[1] + vrRayDir[1] * 100.0f,
+                       vrRayPos[2] + vrRayDir[2] * 100.0f };
     heldActor->world.pos = vrOrigin;
     heldActor->world.rot.x = Math_Vec3f_Pitch(&vrOrigin, &vrTarget);
     heldActor->world.rot.y = Math_Vec3f_Yaw(&vrOrigin, &vrTarget);
@@ -2145,7 +2141,26 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     hookedActor->shape.rot = hookedActor->world.rot;
                     // SOH [VR] Motion aim: the projectile spawns at and flies along the weapon
                     // hand's aim ray (overrides the animation-driven transform just computed).
-                    Player_VrAimHeldProjectile(this, hookedActor, false);
+                    Player_VrAimHeldProjectile(this, hookedActor);
+                    // SOH [VR] Physical archery: while drawn, the arrow's nock sits in the string hand
+                    // and its head points down the shot line, so hand, string and arrow meet. The
+                    // arrow's origin is its head, which vanilla holds |sLeftHandArrowVec3| model units
+                    // out from the drawing hand. (The shot itself still leaves from the bow's anchor.)
+                    if (!Player_HoldsSlingshot(this) && VrArchery_StringNocked()) {
+                        float vrSeg[6];
+                        float vrNockPos[3];
+                        float vrNockRot[4];
+                        if (VrArchery_AimSegment(vrSeg) &&
+                            VR_GetHandPose(CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_LEFT : VR_HAND_RIGHT,
+                                           vrNockPos, vrNockRot)) {
+                            f32 vrArrowLen = sqrtf(SQ(sLeftHandArrowVec3.x) + SQ(sLeftHandArrowVec3.y) +
+                                                   SQ(sLeftHandArrowVec3.z)) *
+                                             this->actor.scale.x;
+                            hookedActor->world.pos.x = vrNockPos[0] + (vrSeg[3] * vrArrowLen);
+                            hookedActor->world.pos.y = vrNockPos[1] + (vrSeg[4] * vrArrowLen);
+                            hookedActor->world.pos.z = vrNockPos[2] + (vrSeg[5] * vrArrowLen);
+                        }
+                    }
                 } else if (this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) {
                     Vec3s spB8;
 
@@ -2230,12 +2245,16 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     SkinMatrix_Vec3fMtxFMultXYZ(&vrInv, &vrHandWorld, &vrLocal);
                     f32 vrLen = sqrtf(SQ(vrLocal.x) + SQ(vrLocal.y) + SQ(vrLocal.z));
                     if (vrLen > 1.0f) {
-                        // The string DL's pull apex is authored along local -Y (headset
-                        // testing: unnegated, the string mirrored the pull), so carry -Y
-                        // onto the hand direction — i.e. rotate +Y onto the NEGATED one.
-                        vrLocal.x = -vrLocal.x;
-                        vrLocal.y = -vrLocal.y;
-                        vrLocal.z = -vrLocal.z;
+                        // Carry the string DL's pull apex onto the hand direction (Matrix_RotateAxis
+                        // applies a right-handed rotation, so this angle and axis take +Y exactly
+                        // onto vrLocal). The slingshot's apex is authored along local -Y (headset
+                        // tuned), so it rotates +Y onto the NEGATED direction. The bow's is along +Y:
+                        // negated, its string pointed away from the pull (2026-10-28 screenshot).
+                        if (Player_HoldsSlingshot(this)) {
+                            vrLocal.x = -vrLocal.x;
+                            vrLocal.y = -vrLocal.y;
+                            vrLocal.z = -vrLocal.z;
+                        }
                         Vec3f vrAxis = { vrLocal.z, 0.0f, -vrLocal.x }; // cross(+Y, pullDir)
                         f32 vrAxisLen = sqrtf(SQ(vrAxis.x) + SQ(vrAxis.z));
                         f32 vrCos = vrLocal.y / vrLen;
@@ -2245,7 +2264,9 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                             vrAxis.z /= vrAxisLen;
                             Matrix_RotateAxis(acosf(CLAMP(vrCos, -1.0f, 1.0f)), &vrAxis, MTXMODE_APPLY);
                         }
-                        if (vrScale > 1.6f) {
+                        // The bow's apex lands on the string hand at any draw length, where the
+                        // arrow's nock is (see the held arrow in the L_HAND branch).
+                        if (Player_HoldsSlingshot(this) && (vrScale > 1.6f)) {
                             vrScale = 1.6f;
                         }
                         Matrix_Scale(1.0f, vrScale, 1.0f, MTXMODE_APPLY);
@@ -2310,9 +2331,11 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     Matrix_Get(&sp44);
                     Matrix_MtxFToYXZRotS(&sp44, &heldActor->world.rot, 0);
                     heldActor->shape.rot = heldActor->world.rot;
-                    // SOH [VR] Motion aim: the hookshot hook launches from and along the weapon
-                    // hand's aim ray (same override as arrows/seeds), from the barrel's tip.
-                    Player_VrAimHeldProjectile(this, heldActor, true);
+                    // SOH [VR] No aim-ray override for the hookshot: the gun model rides the
+                    // controller-pinned hand, so the vanilla transform above already puts the hook
+                    // at the barrel's tip pointing down the barrel. The controller's aim ray points
+                    // a different way than the barrel, which turned the hook sideways and sent the
+                    // chain off at an angle.
 
                     if (func_8002DD78(this) != 0) {
                         Matrix_Translate(500.0f, 300.0f, 0.0f, MTXMODE_APPLY);
