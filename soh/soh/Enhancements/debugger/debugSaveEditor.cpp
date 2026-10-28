@@ -633,6 +633,54 @@ void DrawInventoryTab() {
     }
 
     ImGui::Text("Ammo");
+    // QuestShip: one-press ammo fills (typing numbers in the headset is slow). They set every ammo
+    // item the game counts; Max is each item's capacity with the current bag/quiver (the largest one
+    // when the upgrade isn't owned yet), 50 for bombchus and 10 for magic beans.
+    {
+        static const u8 sAmmoFillItems[] = { ITEM_STICK, ITEM_NUT,      ITEM_BOMB, ITEM_BOW,
+                                             ITEM_SLINGSHOT, ITEM_BOMBCHU, ITEM_BEAN };
+        auto ammoMax = [](u8 item) -> s8 {
+            s32 upg;
+            switch (item) {
+                case ITEM_STICK:
+                    upg = UPG_STICKS;
+                    break;
+                case ITEM_NUT:
+                    upg = UPG_NUTS;
+                    break;
+                case ITEM_BOMB:
+                    upg = UPG_BOMB_BAG;
+                    break;
+                case ITEM_BOW:
+                    upg = UPG_QUIVER;
+                    break;
+                case ITEM_SLINGSHOT:
+                    upg = UPG_BULLET_BAG;
+                    break;
+                case ITEM_BOMBCHU:
+                    return 50;
+                default:
+                    return 10; // magic beans
+            }
+            return (s8)((CUR_CAPACITY(upg) != 0) ? CUR_CAPACITY(upg) : CAPACITY(upg, 3));
+        };
+        static const s8 sAmmoFillValues[] = { 10, 20, 30 };
+        ImGui::Text("Set all ammo:");
+        for (s8 value : sAmmoFillValues) {
+            ImGui::SameLine();
+            if (Button(std::to_string(value).append("##AmmoFill").c_str(), buttonOptionsBase.Tooltip(""))) {
+                for (u8 item : sAmmoFillItems) {
+                    AMMO(item) = value;
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (Button("Max##AmmoFill", buttonOptionsBase.Tooltip(""))) {
+            for (u8 item : sAmmoFillItems) {
+                AMMO(item) = ammoMax(item);
+            }
+        }
+    }
     for (uint32_t ammoIndex = 0, drawnAmmoItems = 0; ammoIndex < 16; ammoIndex++) {
         uint8_t item = (restrictToValid) ? gAmmoItems[ammoIndex] : gAllAmmoItems[ammoIndex];
         if (item != ITEM_NONE) {

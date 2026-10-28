@@ -1129,8 +1129,14 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
                 }
                 gDPSetEnvColor(POLY_OPA_DISP++, color->r, color->g, color->b, 0);
 
-                gSPDisplayList(POLY_OPA_DISP++, gLinkAdultLeftGauntletPlate1DL);
-                gSPDisplayList(POLY_OPA_DISP++, gLinkAdultRightGauntletPlate1DL);
+                // SOH [VR] The forearm plates ride Link's animated forearms, which motion-control hands
+                // hide while the hands float to the controllers, so the plates hung where his body's
+                // hands are. Skip them with the forearms; the hand plates follow the hands.
+                if (!((overrideLimbDraw == Player_OverrideLimbDrawGameplayVRFirstPerson) &&
+                      CVarGetInteger("gVrMotionHands", 1))) {
+                    gSPDisplayList(POLY_OPA_DISP++, gLinkAdultLeftGauntletPlate1DL);
+                    gSPDisplayList(POLY_OPA_DISP++, gLinkAdultRightGauntletPlate1DL);
+                }
                 gSPDisplayList(POLY_OPA_DISP++, (sLeftHandType == PLAYER_MODELTYPE_LH_OPEN)
                                                     ? gLinkAdultLeftGauntletPlate2DL
                                                     : gLinkAdultLeftGauntletPlate3DL);
@@ -1837,6 +1843,8 @@ void func_80090A28(Player* this, Vec3f* vecs) {
     Matrix_MultVec3f(&D_80126098, &vecs[2]);
 }
 
+static s32 Player_VrHeldAimRay(float vrRayPos[3], float vrRayDir[3]);
+
 void Player_DrawHookshotReticle(PlayState* play, Player* this, f32 hookshotRange) {
     static Vec3f D_801260C8 = { -500.0f, -100.0f, 0.0f };
     CollisionPoly* colPoly;
@@ -1852,8 +1860,31 @@ void Player_DrawHookshotReticle(PlayState* play, Player* this, f32 hookshotRange
     D_801260C8.z = hookshotRange;
     Matrix_MultVec3f(&D_801260C8, &hookshotEnd);
 
+    // SOH [VR] In first person a held projectile (hook, arrow, seed) flies along the motion-aim ray,
+    // not along the hand model's axis, so the reticle casts along that same ray. The range is in hand
+    // model units, which Link's model scale converts to world units.
+    float vrRayPos[3];
+    float vrRayDir[3];
+    if ((this->heldActor != NULL) && Player_VrHeldAimRay(vrRayPos, vrRayDir)) {
+        f32 vrRange = hookshotRange * this->actor.scale.x;
+        hookshotStart.x = vrRayPos[0];
+        hookshotStart.y = vrRayPos[1];
+        hookshotStart.z = vrRayPos[2];
+        hookshotEnd.x = vrRayPos[0] + (vrRayDir[0] * vrRange);
+        hookshotEnd.y = vrRayPos[1] + (vrRayDir[1] * vrRange);
+        hookshotEnd.z = vrRayPos[2] + (vrRayDir[2] * vrRange);
+    }
+
     if (BgCheck_AnyLineTest3(&play->colCtx, &hookshotStart, &hookshotEnd, &firstHit, &colPoly, 1, 1, 1, 1, &bgId)) {
         OPEN_DISPS(play->state.gfxCtx);
+
+        // SOH [VR] The reticle is world geometry at the hit point, but the overlay list lands on the flat
+        // HUD panel in the headset, so in VR (either view) it goes in the world's translucent list.
+        Gfx* vrOverlaySaved = NULL;
+        if (VR_IsInitialized() && !VR_IsFlatScreen()) {
+            vrOverlaySaved = OVERLAY_DISP;
+            OVERLAY_DISP = POLY_XLU_DISP;
+        }
 
         OVERLAY_DISP = Gfx_SetupDL(OVERLAY_DISP, 0x07);
 
@@ -1868,6 +1899,11 @@ void Player_DrawHookshotReticle(PlayState* play, Player* this, f32 hookshotRange
         if (GameInteractor_Should(VB_TARGETABLE_HOOKSHOT_RETICLE, true, colPoly, bgId)) {
             gSPSegment(OVERLAY_DISP++, 0x06, play->objectCtx.status[this->actor.objBankIndex].segment);
             gSPDisplayList(OVERLAY_DISP++, gLinkAdultHookshotReticleDL);
+        }
+
+        if (vrOverlaySaved != NULL) {
+            POLY_XLU_DISP = OVERLAY_DISP;
+            OVERLAY_DISP = vrOverlaySaved;
         }
 
         CLOSE_DISPS(play->state.gfxCtx);
@@ -1935,14 +1971,15 @@ Vec3f sLeftRightFootLimbModelFootPos[] = {
 // lock-on keeps steering the camera. The weapon (bow/slingshot/hookshot) models attach to Link's
 // RIGHT hand limb, which motion-hands maps to the player's LEFT controller in right-handed mode
 // (bow in left hand, draw with right) — so the aim ray comes from that controller.
-static void Player_VrAimHeldProjectile(Player* this, Actor* heldActor) {
+// The ray a held projectile flies along in VR first person (see Player_VrAimHeldProjectile),
+// shared with the aiming reticle so it marks where the shot will actually go. False when motion
+// aim is off or the hand isn't tracked.
+static s32 Player_VrHeldAimRay(float vrRayPos[3], float vrRayDir[3]) {
     if (!(VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger("gVrMotionHands", 1) &&
           CVarGetInteger("gVrWeaponAim", 1))) {
-        return;
+        return false;
     }
     s32 vrWeaponHand = CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_RIGHT : VR_HAND_LEFT;
-    float vrRayPos[3];
-    float vrRayDir[3];
     // SOH [VR] Physical archery: while a nock is pinched, the shot aims along the string-hand
     // -> bow-hand line — real two-hand archery — instead of the bow hand's pointing ray. Same
     // override mechanism either way; the flight code still reads world.rot verbatim at release.
@@ -1954,7 +1991,15 @@ static void Player_VrAimHeldProjectile(Player* this, Actor* heldActor) {
         vrRayDir[0] = vrArcherySeg[3];
         vrRayDir[1] = vrArcherySeg[4];
         vrRayDir[2] = vrArcherySeg[5];
-    } else if (!VR_GetAimRay(vrWeaponHand, vrRayPos, vrRayDir)) {
+        return true;
+    }
+    return VR_GetAimRay(vrWeaponHand, vrRayPos, vrRayDir);
+}
+
+static void Player_VrAimHeldProjectile(Player* this, Actor* heldActor) {
+    float vrRayPos[3];
+    float vrRayDir[3];
+    if (!Player_VrHeldAimRay(vrRayPos, vrRayDir)) {
         return;
     }
     Vec3f vrOrigin = { vrRayPos[0], vrRayPos[1], vrRayPos[2] };

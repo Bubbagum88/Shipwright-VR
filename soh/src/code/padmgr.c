@@ -521,11 +521,14 @@ void PadMgr_HandleRetraceMsg(PadMgr* padMgr) {
             }
         }
 
-        // Left thumbstick -> movement (control stick). Overrides only when actually pushed (deadzone),
-        // so it doesn't zero out a keyboard/gamepad stick when idle.
+        // Left thumbstick -> movement (control stick). Overrides only when actually pushed (deadzone,
+        // gVrMoveStickDeadzone in VR Settings), so it doesn't zero out a keyboard/gamepad stick when idle.
+        // The Quest sticks never pass through the controller-config stick settings, so this is their
+        // deadzone.
         float lx = 0.0f, ly = 0.0f;
+        float vrMoveDeadzone = CVarGetFloat("gVrMoveStickDeadzone", 0.15f);
         VR_GetThumbstick(VR_HAND_LEFT, &lx, &ly);
-        if (!vrOcaStickClaimed[VR_HAND_LEFT] && ((lx * lx) + (ly * ly)) > (0.15f * 0.15f)) {
+        if (!vrOcaStickClaimed[VR_HAND_LEFT] && ((lx * lx) + (ly * ly)) > (vrMoveDeadzone * vrMoveDeadzone)) {
             vrPad->stick_x = (s8)CLAMP(lx * 127.0f, -128.0f, 127.0f);
             vrPad->stick_y = (s8)CLAMP(ly * 127.0f, -128.0f, 127.0f);
         }

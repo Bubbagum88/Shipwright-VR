@@ -674,6 +674,17 @@ void SohMenu::AddMenuVRSettings() {
                               "full tilt = full speed). Off: any tilt past the deadzone turns "
                               "at the full configured speed."));
 
+    AddWidget(comfortPath, "Movement Stick Deadzone: %.2f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrMoveStickDeadzone")
+        .Options(FloatSliderOptions()
+                     .Min(0.05f)
+                     .Max(0.80f)
+                     .DefaultValue(0.15f)
+                     .Step(0.05f)
+                     .Format("%.2f")
+                     .Tooltip("How far the movement stick must tilt before Link moves. Raise it if "
+                              "Link creeps when your thumb rests on the stick."));
+
     AddWidget(comfortPath, "World Scale", WIDGET_SEPARATOR_TEXT);
     AddWidget(comfortPath, "Match Scale To My Height (Be Link-Sized)", WIDGET_CVAR_CHECKBOX)
         .CVar("gVrAutoWorldScale")

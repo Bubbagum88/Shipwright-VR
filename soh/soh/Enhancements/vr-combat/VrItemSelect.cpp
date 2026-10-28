@@ -462,6 +462,11 @@ static bool DrawItemModelInHand(Player* player, u8 item, int hand) {
         return false;
     }
     const GetItemEntry entry = ItemTable_Retrieve(gi);
+    // No get-item entry (e.g. the Master Sword maps to GI_MAX): the lookup hands back the empty
+    // entry, whose model id 0 is the bottle.
+    if (entry.itemId == ITEM_NONE) {
+        return false;
+    }
     MtxF handMtx, handInv;
     memcpy(handMtx.mf, hm, sizeof(handMtx.mf));
     if (SkinMatrix_Invert(&handMtx, &handInv) != 0) {
@@ -554,8 +559,13 @@ extern "C" void VrItemSelect_DrawOpenCompass(void) {
         // 3D model when the item has a GetItem model.
         if (models && item < 158) {
             const GetItemID gi = RetrieveGetItemIDFromItemID((ItemID)item);
+            // An item with no get-item entry (the Master Sword maps to GI_MAX) gets the empty entry
+            // back, whose model id 0 is the bottle; it takes the flat icon below instead.
+            GetItemEntry entry = GET_ITEM_NONE;
             if (gi != GI_NONE) {
-                const GetItemEntry entry = ItemTable_Retrieve(gi);
+                entry = ItemTable_Retrieve(gi);
+            }
+            if (entry.itemId != ITEM_NONE) {
                 const float sc = selected ? modelScale * 1.3f : modelScale; // selected = +30%
                 const float offset[3] = { targets[i].at.x, targets[i].at.y, targets[i].at.z };
                 Gfx* opaStart = POLY_OPA_DISP;
