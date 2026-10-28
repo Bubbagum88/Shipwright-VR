@@ -10387,6 +10387,8 @@ void Player_Action_80844AF4(Player* this, PlayState* play) {
     }
 }
 
+void func_80844D68(Player* this, PlayState* play);
+
 s32 func_80844BE4(Player* this, PlayState* play) {
     s32 temp;
 
