@@ -59,8 +59,9 @@ void VrCombat_SetMeleeWeaponState(struct Player* player, int32_t newState);
 // squeeze yet. TriggerConsume: a charge started from it.
 bool VrCombat_SpinTriggerArmed(void);
 void VrCombat_SpinTriggerConsume(void);
-// For a charge in progress: 0 = trigger still held (or waiting for the swing), 1 = released
-// together with a damaging swing, spin now; -1 = released with no swing in time, cancel.
+// For a charge in progress: 1 = a damaging swing began since the charge started (trigger held or
+// just released), spin now; 0 = still waiting for the swing; -1 = released with no swing in time,
+// cancel.
 int32_t VrCombat_SpinRelease(void);
 // VrSwing.cpp: the last draw's swing was fast enough to damage (TIER_HOT).
 bool VrCombat_SwingHot(void);

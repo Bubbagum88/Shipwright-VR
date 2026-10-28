@@ -1526,6 +1526,24 @@ static s32 sVrHandInvertCulling = false;
 static MtxF sVrHandLimbMtxF[2];
 static s32 sVrHandLimbFrame[2] = { -1, -1 };
 
+// SOH [VR] For effects built on mf_9E0 (the sword hand's game-rate pose), such as the spin charge
+// glow and sparkles: with the current matrix stack as the effect's pose, register its new Mtx as a
+// child of the live sword hand so it stays on the sword at headset rate. Needs the player drawn
+// first this frame (true for later actor categories); otherwise the plain matrix is left as is.
+void Player_VrWeldToSwordHand(PlayState* play, Mtx* mtx) {
+    s32 vrHand = CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_LEFT : VR_HAND_RIGHT; // L_HAND limb
+    if (VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger("gVrMotionHands", 1) &&
+        (sVrHandLimbFrame[vrHand] == (s32)play->state.frames)) {
+        MtxF vrCur;
+        MtxF vrInv;
+        MtxF vrLocal;
+        Matrix_Get(&vrCur);
+        SkinMatrix_Invert(&sVrHandLimbMtxF[vrHand], &vrInv);
+        SkinMatrix_MtxFMtxFMult(&vrInv, &vrCur, &vrLocal);
+        VR_RegisterHandChildMatrix((const void*)mtx, vrHand, &vrLocal.mf[0][0]);
+    }
+}
+
 s32 Player_OverrideLimbDrawGameplayVRFirstPerson(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f* pos, Vec3s* rot,
                                                  void* thisx) {
     Player* this = (Player*)thisx;
@@ -1861,18 +1879,17 @@ void Player_DrawHookshotReticle(PlayState* play, Player* this, f32 hookshotRange
     Matrix_MultVec3f(&D_801260C8, &hookshotEnd);
 
     // SOH [VR] In first person a held projectile (hook, arrow, seed) flies along the motion-aim ray,
-    // not along the hand model's axis, so the reticle casts along that same ray. The range is in hand
-    // model units, which Link's model scale converts to world units.
+    // not along the hand model's axis, so the reticle casts along that same ray from where the
+    // projectile sits (already placed by Player_VrAimHeldProjectile). The range is in hand model
+    // units, which Link's model scale converts to world units.
     float vrRayPos[3];
     float vrRayDir[3];
     if ((this->heldActor != NULL) && Player_VrHeldAimRay(vrRayPos, vrRayDir)) {
         f32 vrRange = hookshotRange * this->actor.scale.x;
-        hookshotStart.x = vrRayPos[0];
-        hookshotStart.y = vrRayPos[1];
-        hookshotStart.z = vrRayPos[2];
-        hookshotEnd.x = vrRayPos[0] + (vrRayDir[0] * vrRange);
-        hookshotEnd.y = vrRayPos[1] + (vrRayDir[1] * vrRange);
-        hookshotEnd.z = vrRayPos[2] + (vrRayDir[2] * vrRange);
+        hookshotStart = this->heldActor->world.pos;
+        hookshotEnd.x = hookshotStart.x + (vrRayDir[0] * vrRange);
+        hookshotEnd.y = hookshotStart.y + (vrRayDir[1] * vrRange);
+        hookshotEnd.z = hookshotStart.z + (vrRayDir[2] * vrRange);
     }
 
     if (BgCheck_AnyLineTest3(&play->colCtx, &hookshotStart, &hookshotEnd, &firstHit, &colPoly, 1, 1, 1, 1, &bgId)) {
@@ -1996,15 +2013,20 @@ static s32 Player_VrHeldAimRay(float vrRayPos[3], float vrRayDir[3]) {
     return VR_GetAimRay(vrWeaponHand, vrRayPos, vrRayDir);
 }
 
-static void Player_VrAimHeldProjectile(Player* this, Actor* heldActor) {
+// keepMuzzle: the held actor stays where the weapon model put it (the hookshot's hook sits at the
+// barrel's tip, and its chain is drawn back to the gun) and only its direction follows the aim ray.
+static void Player_VrAimHeldProjectile(Player* this, Actor* heldActor, s32 keepMuzzle) {
     float vrRayPos[3];
     float vrRayDir[3];
     if (!Player_VrHeldAimRay(vrRayPos, vrRayDir)) {
         return;
     }
     Vec3f vrOrigin = { vrRayPos[0], vrRayPos[1], vrRayPos[2] };
-    Vec3f vrTarget = { vrRayPos[0] + vrRayDir[0] * 100.0f, vrRayPos[1] + vrRayDir[1] * 100.0f,
-                       vrRayPos[2] + vrRayDir[2] * 100.0f };
+    if (keepMuzzle) {
+        vrOrigin = heldActor->world.pos;
+    }
+    Vec3f vrTarget = { vrOrigin.x + vrRayDir[0] * 100.0f, vrOrigin.y + vrRayDir[1] * 100.0f,
+                       vrOrigin.z + vrRayDir[2] * 100.0f };
     heldActor->world.pos = vrOrigin;
     heldActor->world.rot.x = Math_Vec3f_Pitch(&vrOrigin, &vrTarget);
     heldActor->world.rot.y = Math_Vec3f_Yaw(&vrOrigin, &vrTarget);
@@ -2123,7 +2145,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     hookedActor->shape.rot = hookedActor->world.rot;
                     // SOH [VR] Motion aim: the projectile spawns at and flies along the weapon
                     // hand's aim ray (overrides the animation-driven transform just computed).
-                    Player_VrAimHeldProjectile(this, hookedActor);
+                    Player_VrAimHeldProjectile(this, hookedActor, false);
                 } else if (this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) {
                     Vec3s spB8;
 
@@ -2289,8 +2311,8 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     Matrix_MtxFToYXZRotS(&sp44, &heldActor->world.rot, 0);
                     heldActor->shape.rot = heldActor->world.rot;
                     // SOH [VR] Motion aim: the hookshot hook launches from and along the weapon
-                    // hand's aim ray (same override as arrows/seeds).
-                    Player_VrAimHeldProjectile(this, heldActor);
+                    // hand's aim ray (same override as arrows/seeds), from the barrel's tip.
+                    Player_VrAimHeldProjectile(this, heldActor, true);
 
                     if (func_8002DD78(this) != 0) {
                         Matrix_Translate(500.0f, 300.0f, 0.0f, MTXMODE_APPLY);

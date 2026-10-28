@@ -49,11 +49,12 @@ int sSpinTick = 0;
 bool sSpinHeld = false;
 bool sSpinArmed = false; // fresh squeeze, still held, not yet used to start a charge
 int sSpinReleaseTick = -1000;
-int sSpinLastHotTick = -1000;
+int sSpinHotStartTick = -1000; // tick the most recent damaging swing began
+bool sSpinHotWas = false;
+int sSpinChargeTick = -1000; // tick the current charge started
 bool sSpinFullBuzzed = false;
-// The release counts as "with a swing" if a damaging swing ran within this many ticks before
-// letting go, or starts within the grace window after it (20 Hz ticks: ~0.15 s and ~0.4 s).
-constexpr int kSpinSwingBeforeRelease = 3;
+// After letting go of the trigger, a damaging swing that starts within this many ticks still
+// spins (20 Hz ticks: ~0.4 s); otherwise the charge is put down.
 constexpr int kSpinReleaseGrace = 8;
 
 int SpinHand() {
@@ -106,9 +107,11 @@ void OnPlayerUpdateVrCombat() {
             }
         }
         sSpinHeld = cur;
-        if (VrCombat_SwingHot()) {
-            sSpinLastHotTick = sSpinTick;
+        const bool hot = VrCombat_SwingHot();
+        if (hot && !sSpinHotWas) {
+            sSpinHotStartTick = sSpinTick;
         }
+        sSpinHotWas = hot;
         const bool full = (player->stateFlags1 & PLAYER_STATE1_CHARGING_SPIN_ATTACK) && (player->unk_858 >= 0.85f);
         if (full && !sSpinFullBuzzed) {
             VR_TriggerHaptic(SpinHand(), 0.8f, 0.0f, 120.0f);
@@ -146,14 +149,17 @@ extern "C" bool VrCombat_SpinTriggerArmed(void) {
 
 extern "C" void VrCombat_SpinTriggerConsume(void) {
     sSpinArmed = false;
+    sSpinChargeTick = sSpinTick;
 }
 
 extern "C" int32_t VrCombat_SpinRelease(void) {
+    // A damaging swing that began after the charge started spins, whether the trigger is still
+    // held or was let go just before the swing. The next spin needs a fresh squeeze (sSpinArmed).
+    if (sSpinHotStartTick > sSpinChargeTick) {
+        return 1;
+    }
     if (sSpinHeld) {
         return 0;
-    }
-    if (sSpinLastHotTick >= sSpinReleaseTick - kSpinSwingBeforeRelease) {
-        return 1;
     }
     return (sSpinTick - sSpinReleaseTick > kSpinReleaseGrace) ? -1 : 0;
 }
