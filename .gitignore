@@ -58,6 +58,8 @@ graphs/
 .extracted-assets.json
 
 !OTRExporter/assets/**/*.png
+# QuestShip: the Android launcher icons are PNGs
+!Android/app/src/main/res/**/*.png
 
 # Docs
 !docs/tutorial/
