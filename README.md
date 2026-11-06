@@ -2,7 +2,7 @@
 
 The Legend of Zelda: Ocarina of Time in VR on the **original Oculus Quest (Quest 1)**, standalone. No PC or cable needed once it's installed.
 
-This is a Quest 1 build of ChocoTorp's [Shipwright-VR](https://github.com/ChocoTorp/Shipwright-VR), the standalone Quest port of [Ship of Harkinian VR](https://github.com/ShinyWindow/Shipwright-VR) by ShinyWindow, which is built on [Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) by HarbourMasters. It starts on the Quest 1 and adds a set of VR fixes and features, listed below.
+**This fork is specifically for the Quest 1.** It's based on ChocoTorp's [Shipwright-VR](https://github.com/ChocoTorp/Shipwright-VR), the standalone Quest port of [Ship of Harkinian VR](https://github.com/ShinyWindow/Shipwright-VR) by ShinyWindow, which is built on [Ship of Harkinian](https://github.com/HarbourMasters/Shipwright) by HarbourMasters. It makes the game start on the Quest 1, fixes bugs found while playing it there (HUD layout, item models, bow and hookshot aiming, the Android build), and adds some VR features. All of it is listed below.
 
 **No game content is included.** You need your own Ocarina of Time ROM (`.z64`, `.n64` or `.v64`). Check it's a supported version at [ship.equipment](https://ship.equipment/).
 
@@ -14,21 +14,33 @@ ChocoTorp's APK closes as soon as it starts on a Quest 1. Its manifest lists onl
 
 Tested on one Quest 1 (firmware v50) with release **quest1-v1.0**: the game runs and plays. That headset is rooted; nothing in the port uses root, but it hasn't been tried on an unrooted Quest 1.
 
-## What's new compared with ChocoTorp's build
+## What's different from ChocoTorp's build
 
-- Starts on the Quest 1.
+### Quest 1 support
+
+- Starts on the Quest 1 (the manifest lists `quest|quest2`).
+
+### Bug fixes
+
+- **HUD:** the layout was squeezed toward the middle in VR, so the magic meter overlapped the buttons. It now sits where it does in the normal game.
+- **Item compass:** adult swords showed as a bottle, and some items (Master Sword, broken knife, half milk) showed a flat icon. They now show their 3D models.
+- **Hookshot:** the hook sat inside the hand and fired at an angle. It now sits on the barrel tip and fires straight down the barrel.
+- **Bow:** the string stretched away from your hand instead of toward it. It now pulls to your drawing hand, and the arrow's back end sits in that hand.
+- **Item reticles** (hookshot, bow, slingshot) were placed for the flat screen. They're now drawn in the world, where the shot will land.
+- **Enemy health bars** were placed for the flat screen. They now float over enemies in the world, in first and third person.
+- **Shops** in third person: the cursor was broken; it's now an in-world cursor.
+- **Gauntlets:** floating forearm pieces with motion-controlled hands removed.
+- **First person:** the camera keeps clear of walls, and crawlspace exits work.
+- **Android build:** fixed so the APK builds from a fresh clone.
+
+### New features
+
 - **Spin attack** with physical sword combat: squeeze the sword hand's trigger to charge (a buzz means full charge), then swing. It works while holding or right after letting go.
-- **Bow:** the string pulls to your drawing hand and the arrow's back end sits in that hand.
-- **Hookshot** fires straight down its barrel; item reticles (hookshot, bow, slingshot) are drawn in the world where the shot will land.
-- **Enemy health bars** float over enemies in the world, in first and third person.
-- **HUD** layout fixed for VR: the magic meter no longer overlaps the buttons.
 - **Pause menu laser pointer:** point and pull the trigger to pick slots.
-- **Shops:** pointer in first person, in-world cursor in third person.
-- **First person:** get closer to NPCs; the camera keeps clear of walls; crawlspace exits fixed.
-- **Item compass:** 3D models for the Master Sword and other items that showed a bottle or icon.
+- **Shop pointer** in first person.
+- **NPC closeness** in first person: you can get closer to characters.
 - **Movement stick deadzone** setting (VR Settings > Comfort & Movement).
 - **Save editor** (Dev Tools): set all ammo to 10, 20, 30 or max.
-- **Gauntlets:** no floating forearm pieces with motion-controlled hands.
 
 ## Requirements
 
@@ -94,10 +106,13 @@ I play with **Djipi's 3DS Experience** on my Quest 1. It replaces the N64 textur
 | Use an item | Trigger |
 | Slingshot / bow | Bring your free hand to the weapon, squeeze the trigger, pull back, release |
 | Grab and throw a Deku Nut | Grip near the nut in front of your chest, then throw |
-| Pause, save, equip | Left stick click (right stick click in left-handed mode); point and pull the trigger to pick |
+| Z-target | Left grip |
+| Action (talk, open, climb) | A |
+| Back (in menus and text) | B |
+| Pause, save, equip | Y; point and pull the trigger to pick |
 | Settings menu (in the headset) | Left menu button |
 
-Everything VR-specific (left-handed mode, turning, hand and HUD placement, comfort, performance) is under **VR Settings** in the in-headset menu.
+These are the defaults. Every button can be rebound, and everything VR-specific (left-handed mode, turning, hand and HUD placement, comfort, performance) is under **VR Settings** in the in-headset menu.
 
 ## Building
 
