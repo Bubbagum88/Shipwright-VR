@@ -2108,6 +2108,22 @@ static s32 Player_VrDirectMovement(Player* this) {
     return VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger("gVrBodyFollowsHead", 1);
 }
 
+// SOH [VR] Wall/ledge facing: the wall-interact ray and the ledge-grab/climb facing gates use Link's
+// body yaw, which in vanilla eases toward the movement direction. With the body pinned to the headset,
+// looking slightly off the wall dropped the ledge checks even while the stick pushed straight into it.
+// In direct movement (not locked on, while moving) the body counts as facing the wall when either the
+// head or the movement direction does: whichever is closer to facing the wall is used.
+static s16 Player_VrWallFacingYaw(Player* this) {
+    s16 intoWall = this->actor.wallYaw + 0x8000;
+    s16 headDiff = this->actor.shape.rot.y - intoWall;
+    s16 moveDiff = this->yaw - intoWall;
+
+    if (!Player_VrDirectMovement(this) || sVrLockOnActive || (this->linearVelocity <= 0.0f)) {
+        return this->actor.shape.rot.y;
+    }
+    return (ABS(moveDiff) < ABS(headDiff)) ? this->yaw : this->actor.shape.rot.y;
+}
+
 // SOH [VR] Physical-combat spin attack. The swing is the attack for covered swords, so the B-held
 // charge has its own input: hold the sword hand's trigger (idle while such a sword is out) to
 // charge, then swing as you let go to release. Past that it is the game's own charge and spin
@@ -5758,13 +5774,17 @@ s32 Player_HandleExitsAndVoids(PlayState* play, Player* this, CollisionPoly* pol
  * An offset is applied to the provided base position in the direction of shape y rotation.
  * The resulting position is stored in `dest`
  */
-void Player_GetRelativePosition(Player* this, Vec3f* base, Vec3f* offset, Vec3f* dest) {
-    f32 cos = Math_CosS(this->actor.shape.rot.y);
-    f32 sin = Math_SinS(this->actor.shape.rot.y);
+static void Player_GetRelativePositionAtYaw(s16 yaw, Vec3f* base, Vec3f* offset, Vec3f* dest) {
+    f32 cos = Math_CosS(yaw);
+    f32 sin = Math_SinS(yaw);
 
     dest->x = base->x + ((offset->x * cos) + (offset->z * sin));
     dest->y = base->y + offset->y;
     dest->z = base->z + ((offset->z * cos) - (offset->x * sin));
+}
+
+void Player_GetRelativePosition(Player* this, Vec3f* base, Vec3f* offset, Vec3f* dest) {
+    Player_GetRelativePositionAtYaw(this->actor.shape.rot.y, base, offset, dest);
 }
 
 Actor* Player_SpawnFairy(PlayState* play, Player* this, Vec3f* arg2, Vec3f* arg3, s32 type) {
@@ -5795,8 +5815,8 @@ f32 func_8083973C(PlayState* play, Player* this, Vec3f* arg2, Vec3f* arg3) {
  * Point B of the line is at player's world position offset by the entire `offset` vector.
  * Point A and B are always at the same height, meaning this is a horizontal line test.
  */
-s32 Player_PosVsWallLineTest(PlayState* play, Player* this, Vec3f* offset, CollisionPoly** wallPoly, s32* bgId,
-                             Vec3f* posResult) {
+static s32 Player_PosVsWallLineTestAtYaw(PlayState* play, Player* this, s16 yaw, Vec3f* offset,
+                                         CollisionPoly** wallPoly, s32* bgId, Vec3f* posResult) {
     Vec3f posA;
     Vec3f posB;
 
@@ -5804,9 +5824,14 @@ s32 Player_PosVsWallLineTest(PlayState* play, Player* this, Vec3f* offset, Colli
     posA.y = this->actor.world.pos.y + offset->y;
     posA.z = this->actor.world.pos.z;
 
-    Player_GetRelativePosition(this, &this->actor.world.pos, offset, &posB);
+    Player_GetRelativePositionAtYaw(yaw, &this->actor.world.pos, offset, &posB);
 
     return BgCheck_EntityLineTest1(&play->colCtx, &posA, &posB, posResult, wallPoly, true, false, false, true, bgId);
+}
+
+s32 Player_PosVsWallLineTest(PlayState* play, Player* this, Vec3f* offset, CollisionPoly** wallPoly, s32* bgId,
+                             Vec3f* posResult) {
+    return Player_PosVsWallLineTestAtYaw(play, this, this->actor.shape.rot.y, offset, wallPoly, bgId, posResult);
 }
 
 s32 Player_ActionHandler_1(Player* this, PlayState* play) {
@@ -6311,7 +6336,8 @@ void func_8083AA10(Player* this, PlayState* play) {
                 if ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND_LEAVE) &&
                     !(this->stateFlags1 & PLAYER_STATE1_IN_WATER) && (sPrevFloorProperty != 6) &&
                     (sPrevFloorProperty != 9) && (sYDistToFloor > 20.0f) && (this->meleeWeaponState == 0) &&
-                    (ABS(sp5C) < 0x2000) && (this->linearVelocity > 3.0f)) {
+                    ((ABS(sp5C) < 0x2000) || (Player_VrDirectMovement(this) && !sVrLockOnActive)) &&
+                    (this->linearVelocity > 3.0f)) {
 
                     if ((sPrevFloorProperty == 11) && !(this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR)) {
 
@@ -11860,13 +11886,14 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
         s32 wallBgId;
         s16 yawDiff;
         s32 pad;
+        s16 wallFacingYaw = Player_VrWallFacingYaw(this);
 
         sInteractWallCheckOffset.y = 18.0f;
         sInteractWallCheckOffset.z = this->ageProperties->wallCheckRadius + 10.0f;
 
         if (!(this->stateFlags2 & PLAYER_STATE2_CRAWLING) &&
-            Player_PosVsWallLineTest(play, this, &sInteractWallCheckOffset, &wallPoly, &wallBgId,
-                                     &sInteractWallCheckResult)) {
+            Player_PosVsWallLineTestAtYaw(play, this, wallFacingYaw, &sInteractWallCheckOffset, &wallPoly,
+                                          &wallBgId, &sInteractWallCheckResult)) {
             this->actor.bgCheckFlags |= 0x200;
             if (this->actor.wallPoly != wallPoly) {
                 this->actor.wallPoly = wallPoly;
@@ -11875,7 +11902,7 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
             }
         }
 
-        yawDiff = this->actor.shape.rot.y - (s16)(this->actor.wallYaw + 0x8000);
+        yawDiff = wallFacingYaw - (s16)(this->actor.wallYaw + 0x8000);
 
         sTouchedWallFlags = func_80041DB8(&play->colCtx, this->actor.wallPoly, this->actor.wallBgId);
 
@@ -11940,8 +11967,8 @@ void Player_ProcessSceneCollision(PlayState* play, Player* this) {
                 } else {
                     sInteractWallCheckOffset.y = (ledgePosY + 5.0f) - this->actor.world.pos.y;
 
-                    if (Player_PosVsWallLineTest(play, this, &sInteractWallCheckOffset, &poly, &bgId,
-                                                 &sInteractWallCheckResult) &&
+                    if (Player_PosVsWallLineTestAtYaw(play, this, wallFacingYaw, &sInteractWallCheckOffset, &poly,
+                                                      &bgId, &sInteractWallCheckResult) &&
                         (wallYawDiff = this->actor.wallYaw - Math_Atan2S(poly->normal.z, poly->normal.x),
                          ABS(wallYawDiff) < 0x4000) &&
                         !func_80041E18(&play->colCtx, poly, bgId)) {
