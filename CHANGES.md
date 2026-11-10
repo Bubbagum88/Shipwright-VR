@@ -16,6 +16,8 @@
 - Landing ring shows exactly where each shot will hit.
 - Optional flight path line is smooth and steady width.
 - Slingshot aim tilts up three degrees and launches higher.
+- Bow string bends to the drawing hand; ends stay on the bow.
+- Arrow rests above the bow hand and stops at full draw.
 - Hand-held models and markers no longer trail while walking.
 - Items near your face stay visible in both eyes.
 - Fixed rare black textures caused by stale mipmap state.

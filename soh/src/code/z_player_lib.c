@@ -2073,6 +2073,23 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     // SOH [VR] Motion aim: the projectile spawns at and flies along the weapon
                     // hand's aim ray (overrides the animation-driven transform just computed).
                     Player_VrAimHeldProjectile(this, hookedActor);
+                    // SOH [VR] Physical archery: while drawn, the arrow's nock sits where the string is
+                    // drawn to (VrArchery_NockPoint, which stops at full draw) and its head points down
+                    // the shot line, so string and arrow meet. The
+                    // arrow's origin is its head, which vanilla holds |sLeftHandArrowVec3| model units
+                    // out from the drawing hand. (The shot itself still leaves from the bow's anchor.)
+                    if (!Player_HoldsSlingshot(this) && VrArchery_StringNocked()) {
+                        float vrSeg[6];
+                        float vrNockPos[3];
+                        if (VrArchery_AimSegment(vrSeg) && VrArchery_NockPoint(vrNockPos)) {
+                            f32 vrArrowLen = sqrtf(SQ(sLeftHandArrowVec3.x) + SQ(sLeftHandArrowVec3.y) +
+                                                   SQ(sLeftHandArrowVec3.z)) *
+                                             this->actor.scale.x;
+                            hookedActor->world.pos.x = vrNockPos[0] + (vrSeg[3] * vrArrowLen);
+                            hookedActor->world.pos.y = vrNockPos[1] + (vrSeg[4] * vrArrowLen);
+                            hookedActor->world.pos.z = vrNockPos[2] + (vrSeg[5] * vrArrowLen);
+                        }
+                    }
                 } else if (this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) {
                     Vec3s spB8;
 
@@ -2142,9 +2159,13 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                 // The pulling hand is the STRING-hand controller, fetched directly —
                 // D_80160000 here is this R_HAND limb's own position (updated per limb at
                 // function entry), which is why an earlier version always stretched "up".
+                // The bow's string goes to the shared nock point, so it meets the arrow and stops at
+                // full draw with it; the slingshot band follows the hand (offset and cap below).
+                s32 vrBowNock = !Player_HoldsSlingshot(this) && VrArchery_NockPoint(vrStrPos);
                 if (VrArchery_StringNocked() &&
-                    VR_GetHandPose(CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_LEFT : VR_HAND_RIGHT, vrStrPos,
-                                   vrStrRot)) {
+                    (vrBowNock ||
+                     VR_GetHandPose(CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_LEFT : VR_HAND_RIGHT, vrStrPos,
+                                    vrStrRot))) {
                     MtxF vrCur;
                     MtxF vrInv;
                     Vec3f vrLocal;
@@ -2157,25 +2178,38 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     SkinMatrix_Vec3fMtxFMultXYZ(&vrInv, &vrHandWorld, &vrLocal);
                     f32 vrLen = sqrtf(SQ(vrLocal.x) + SQ(vrLocal.y) + SQ(vrLocal.z));
                     if (vrLen > 1.0f) {
-                        // The string DL's pull apex is authored along local -Y (headset
-                        // testing: unnegated, the string mirrored the pull), so carry -Y
-                        // onto the hand direction — i.e. rotate +Y onto the NEGATED one.
-                        vrLocal.x = -vrLocal.x;
-                        vrLocal.y = -vrLocal.y;
-                        vrLocal.z = -vrLocal.z;
-                        Vec3f vrAxis = { vrLocal.z, 0.0f, -vrLocal.x }; // cross(+Y, pullDir)
-                        f32 vrAxisLen = sqrtf(SQ(vrAxis.x) + SQ(vrAxis.z));
-                        f32 vrCos = vrLocal.y / vrLen;
-                        f32 vrScale = vrLen / CVarGetFloat("gVrArcheryStringApex", 1500.0f);
-                        if (vrAxisLen > 1e-3f) {
-                            vrAxis.x /= vrAxisLen;
-                            vrAxis.z /= vrAxisLen;
-                            Matrix_RotateAxis(acosf(CLAMP(vrCos, -1.0f, 1.0f)), &vrAxis, MTXMODE_APPLY);
+                        // Shear, not rotate: the string's two ends lie on the DL's Y = 0 plane (that is
+                        // why vanilla's Y scale keeps them on the bow tips at any pull), and only the
+                        // apex is off it, along local Y. Replacing just the Y basis vector with the
+                        // pull direction moves the apex onto the hand and leaves both ends fixed, so the
+                        // string stays attached and in the bow's plane at the tips. A rotation turned
+                        // the whole string, ends included, away from the tips. Both apexes lie along
+                        // local -Y (slingshot headset tuned; bow from build #17, where +Y sent the
+                        // string forward as the hand pulled back), so the Y basis takes the negated
+                        // pull. gVrArcheryStringApex is the apex's model length (String Pull Visual Scale).
+                        const f32 vrApex = CVarGetFloat("gVrArcheryStringApex", 1500.0f);
+                        // Bow: the apex goes exactly to the shared nock point (already offset and limited).
+                        // Slingshot: the apex goes to the hand, pulled back toward the fork by about a
+                        // hand's width, and the band stops at 1.6x its apex length. vrUnit = world units
+                        // per local unit of the current matrix.
+                        const f32 vrHandWidthM = 0.08f;
+                        f32 vrWorldScale = VR_GetWorldScale();
+                        f32 vrUnit = sqrtf(SQ(vrCur.xx) + SQ(vrCur.yx) + SQ(vrCur.zx));
+                        f32 vrTarget = vrLen;
+                        if (!vrBowNock) {
+                            if (vrUnit > 1e-6f) {
+                                vrTarget -= vrHandWidthM * (vrWorldScale < 1.0f ? 35.0f : vrWorldScale) / vrUnit;
+                            }
+                            vrTarget = CLAMP(vrTarget, 0.0f, vrApex * 1.6f);
                         }
-                        if (vrScale > 1.6f) {
-                            vrScale = 1.6f;
-                        }
-                        Matrix_Scale(1.0f, vrScale, 1.0f, MTXMODE_APPLY);
+                        f32 vrScale = vrTarget / vrApex;
+                        f32 vrSign = -vrTarget / vrLen;
+                        MtxF vrShear;
+                        SkinMatrix_Clear(&vrShear);
+                        vrShear.mf[1][0] = vrSign * vrLocal.x / vrApex; // MtxF is mf[col][row]
+                        vrShear.mf[1][1] = vrSign * vrLocal.y / vrApex;
+                        vrShear.mf[1][2] = vrSign * vrLocal.z / vrApex;
+                        Matrix_Mult(&vrShear, MTXMODE_APPLY);
                         // Keep the vanilla pull scalar coherent for anything else that reads it.
                         this->unk_858 = vrScale > 1.0f ? 1.0f : vrScale;
                         this->unk_85C = -0.5f;
