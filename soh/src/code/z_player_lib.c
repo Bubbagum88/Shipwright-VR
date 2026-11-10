@@ -2315,16 +2315,26 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                         // apex is off it, along local Y. Replacing just the Y basis vector with the
                         // pull direction moves the apex onto the hand and leaves both ends fixed, so the
                         // string stays attached and in the bow's plane at the tips. A rotation turned
-                        // the whole string, ends included, away from the tips. The bow's apex is along
-                        // +Y; the slingshot's along -Y (headset tuned), so it takes the negated pull.
-                        // gVrArcheryStringApex is the apex's model length (String Pull Visual Scale).
+                        // the whole string, ends included, away from the tips. Both apexes lie along
+                        // local -Y (slingshot headset tuned; bow from build #17, where +Y sent the
+                        // string forward as the hand pulled back), so the Y basis takes the negated
+                        // pull. gVrArcheryStringApex is the apex's model length (String Pull Visual Scale).
                         const f32 vrApex = CVarGetFloat("gVrArcheryStringApex", 1500.0f);
-                        f32 vrScale = vrLen / vrApex;
-                        f32 vrSign = Player_HoldsSlingshot(this) ? -1.0f : 1.0f;
-                        if (Player_HoldsSlingshot(this) && (vrScale > 1.6f)) {
-                            vrSign *= 1.6f / vrScale; // slingshot band stretch cap
-                            vrScale = 1.6f;
+                        // The apex goes to the hand, pulled back toward the bow by about a hand's width
+                        // (the fingers hold the string in front of the grip point), and stops at full
+                        // draw: 1.0x the apex length for the bow (vanilla's full pull), 1.6x for the
+                        // slingshot band. vrUnit = world units per local unit of the current matrix.
+                        const f32 vrHandWidthM = 0.08f;
+                        f32 vrWorldScale = VR_GetWorldScale();
+                        f32 vrUnit = sqrtf(SQ(vrCur.xx) + SQ(vrCur.yx) + SQ(vrCur.zx));
+                        f32 vrTarget = vrLen;
+                        if (vrUnit > 1e-6f) {
+                            vrTarget -= vrHandWidthM * (vrWorldScale < 1.0f ? 35.0f : vrWorldScale) / vrUnit;
                         }
+                        f32 vrMax = vrApex * (Player_HoldsSlingshot(this) ? 1.6f : 1.0f);
+                        vrTarget = CLAMP(vrTarget, 0.0f, vrMax);
+                        f32 vrScale = vrTarget / vrApex;
+                        f32 vrSign = -vrTarget / vrLen;
                         MtxF vrShear;
                         SkinMatrix_Clear(&vrShear);
                         vrShear.mf[1][0] = vrSign * vrLocal.x / vrApex; // MtxF is mf[col][row]
