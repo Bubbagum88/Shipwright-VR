@@ -109,8 +109,14 @@ int LiftNearHand() {
     return (gPlayState && gPlayState->gameplayFrames - sLiftNearFrame <= 1) ? sLiftNearHand : -1;
 }
 int sLiftHand = -1;              // hand holding a physically lifted object, -1 = none
-float sLiftLocalOffset[3] = {};  // object base relative to the holding hand, in the hand's frame
+float sLiftLocalOffset[3] = {};  // object's drawn origin relative to the holding hand, in the hand's frame
 float sLiftRelRot[3][3] = {};    // object orientation relative to the hand: R_hand^T * R_object
+
+// Actor_Draw draws the model at world.pos + (0, shape.yOffset * scale.y, 0), with the offset
+// applied in world space, unrotated.
+float DrawLift(const Actor* actor) {
+    return actor->shape.yOffset * actor->scale.y;
+}
 
 // Grab toward where the hand touches, held close: the object's center sits a short way from the
 // hand (kLiftHoldFraction of its radius) in the direction it was grabbed from, so the hand neither
@@ -134,7 +140,10 @@ void CaptureLiftOffset(int hand, Actor* actor, bool hangUnderPalm = false) {
     // Center at hand + dir * hold; the stored offset is to the object's base, half its height below.
     // Hanging, the top rests at the palm instead.
     const float hold = hangUnderPalm ? height * 0.5f : radius * kLiftHoldFraction;
-    const float world[3] = { dir[0] * hold, dir[1] * hold - height * 0.5f, dir[2] * hold };
+    // Stored to the model's drawn origin, not world.pos: Actor_Draw lifts the model by
+    // shape.yOffset * scale.y straight up in world space before rotating it (the small rock's is
+    // 5.8 units), so a rotated object would turn about a point that isn't fixed to the hand.
+    const float world[3] = { dir[0] * hold, dir[1] * hold - height * 0.5f + DrawLift(actor), dir[2] * hold };
     VrCombat::QuatRotate(rotation, world, sLiftLocalOffset, true);
 
     // Orientation: the object's draw rotation (shape.rot, applied Y, X, Z as in Actor_Draw) made
@@ -298,7 +307,9 @@ extern "C" void VrItemThrow_UpdateCarryPose(Player* player) {
         if (VR_GetHandPose(sLiftHand, position, rotation)) {
             float offset[3];
             VrCombat::QuatRotate(rotation, sLiftLocalOffset, offset);
-            player->heldActor->world.pos = { position[0] + offset[0], position[1] + offset[1], position[2] + offset[2] };
+            player->heldActor->world.pos = { position[0] + offset[0],
+                                             position[1] + offset[1] - DrawLift(player->heldActor),
+                                             position[2] + offset[2] };
             float handRot[3][3];
             VrCombat::QuatToRot(rotation, handRot);
             MtxF objectMtx = {};
