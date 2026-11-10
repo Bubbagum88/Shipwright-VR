@@ -112,35 +112,29 @@ int sLiftHand = -1;              // hand holding a physically lifted object, -1 
 float sLiftLocalOffset[3] = {};  // object base relative to the holding hand, in the hand's frame
 float sLiftRelRot[3][3] = {};    // object orientation relative to the hand: R_hand^T * R_object
 
-// Grab where the hand touches: find the point on the object's collision cylinder surface nearest
-// the hand (the top when the hand is above it, else the side wall), and keep the object so that
-// point stays at the hand. The offset is stored in the hand's frame, so the object turns with it.
-// With hangUnderPalm (an A-button lift from beyond grab reach), the contact is the top center, so
-// the object hangs under the hand instead of floating at a distance.
+// Grab toward where the hand touches, held close: the object's center sits a short way from the
+// hand (kLiftHoldFraction of its radius) in the direction it was grabbed from, so the hand neither
+// sits inside the object nor holds it out at arm's length by its surface. The offset is stored in
+// the hand's frame, so the object turns with it. With hangUnderPalm (an A-button lift from beyond
+// grab reach), the object hangs straight below the hand with its top at the palm, as before.
+constexpr float kLiftHoldFraction = 0.5f;
 void CaptureLiftOffset(int hand, Actor* actor, bool hangUnderPalm = false) {
     float position[3], rotation[4], radius, height;
     sLiftLocalOffset[0] = sLiftLocalOffset[1] = sLiftLocalOffset[2] = 0.0f;
     if (!VR_GetHandPose(hand, position, rotation) || !LiftCylinder(actor, &radius, &height)) return;
     const float base[3] = { actor->world.pos.x, actor->world.pos.y, actor->world.pos.z };
-    const float dx = position[0] - base[0], dz = position[2] - base[2];
-    const float horizontal = std::sqrt(dx * dx + dz * dz);
-    float contact[3];
-    if (hangUnderPalm) {
-        contact[0] = base[0];
-        contact[1] = base[1] + height;
-        contact[2] = base[2];
-    } else if (position[1] >= base[1] + height && horizontal <= radius) {
-        contact[0] = position[0]; // above the top: rest on the top cap
-        contact[1] = base[1] + height;
-        contact[2] = position[2];
-    } else {
-        const float nx = horizontal > 0.001f ? dx / horizontal : 1.0f;
-        const float nz = horizontal > 0.001f ? dz / horizontal : 0.0f;
-        contact[0] = base[0] + nx * radius; // side wall, even if the hand reached inside
-        contact[1] = position[1] < base[1] ? base[1] : position[1] > base[1] + height ? base[1] + height : position[1];
-        contact[2] = base[2] + nz * radius;
+    float dir[3] = { 0.0f, -1.0f, 0.0f };
+    if (!hangUnderPalm) {
+        const float to[3] = { base[0] - position[0], base[1] + height * 0.5f - position[1], base[2] - position[2] };
+        const float length = std::sqrt(to[0] * to[0] + to[1] * to[1] + to[2] * to[2]);
+        if (length > 0.001f) {
+            dir[0] = to[0] / length; dir[1] = to[1] / length; dir[2] = to[2] / length;
+        }
     }
-    const float world[3] = { base[0] - contact[0], base[1] - contact[1], base[2] - contact[2] };
+    // Center at hand + dir * hold; the stored offset is to the object's base, half its height below.
+    // Hanging, the top rests at the palm instead.
+    const float hold = hangUnderPalm ? height * 0.5f : radius * kLiftHoldFraction;
+    const float world[3] = { dir[0] * hold, dir[1] * hold - height * 0.5f, dir[2] * hold };
     VrCombat::QuatRotate(rotation, world, sLiftLocalOffset, true);
 
     // Orientation: the object's draw rotation (shape.rot, applied Y, X, Z as in Actor_Draw) made
