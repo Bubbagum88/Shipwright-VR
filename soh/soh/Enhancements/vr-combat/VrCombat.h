@@ -159,6 +159,10 @@ bool VrItemThrow_LiftCarrying(struct Player* player);
 bool VrItemThrow_LiftEngaged(void);
 void VrItemThrow_OfferLift(struct Actor* actor);
 void VrItemThrow_LiftTick(struct PlayState* play, struct Player* player);
+// A in first person: lift into the nearest hand instead of over Link's head. True = handled.
+bool VrItemThrow_LiftWithButton(struct PlayState* play, struct Player* player, struct Actor* actor);
+// Throw the physically lifted object now, with the holding hand's motion.
+void VrItemThrow_LiftThrowNow(struct PlayState* play, struct Player* player);
 bool Player_VrLiftActor(struct PlayState* play, struct Player* player, struct Actor* actor);
 void Player_VrReleaseLifted(struct PlayState* play, struct Player* player, const float* velocity);
 uint16_t VrItemSelect_TriggerItemMask(int32_t vrHand);

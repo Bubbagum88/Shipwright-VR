@@ -2161,7 +2161,9 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                             hookedActor->world.pos.z = vrNockPos[2] + (vrSeg[5] * vrArrowLen);
                         }
                     }
-                } else if (this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) {
+                } else if ((this->stateFlags1 & PLAYER_STATE1_CARRYING_ACTOR) && !VrItemThrow_LiftCarrying(this)) {
+                    // SOH [VR] A physically lifted object takes its rotation from the holding hand
+                    // (VrItemThrow_UpdateCarryPose), not from Link's body yaw, which follows the head.
                     Vec3s spB8;
 
                     Matrix_Get(&sp14C);

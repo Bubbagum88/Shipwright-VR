@@ -8,6 +8,7 @@ extern PlayState* gPlayState;
 }
 #include "VrCombat.h"
 #include "VrEmittedMatrices.h"
+#include "VrMath.h"
 #include <libultraship/bridge/consolevariablebridge.h>
 #include <cmath>
 #include <cstring>
@@ -108,6 +109,56 @@ int LiftNearHand() {
     return (gPlayState && gPlayState->gameplayFrames - sLiftNearFrame <= 1) ? sLiftNearHand : -1;
 }
 int sLiftHand = -1;              // hand holding a physically lifted object, -1 = none
+float sLiftLocalOffset[3] = {};  // object base relative to the holding hand, in the hand's frame
+float sLiftRelRot[3][3] = {};    // object orientation relative to the hand: R_hand^T * R_object
+
+// Grab where the hand touches: find the point on the object's collision cylinder surface nearest
+// the hand (the top when the hand is above it, else the side wall), and keep the object so that
+// point stays at the hand. The offset is stored in the hand's frame, so the object turns with it.
+// With hangUnderPalm (an A-button lift from beyond grab reach), the contact is the top center, so
+// the object hangs under the hand instead of floating at a distance.
+void CaptureLiftOffset(int hand, Actor* actor, bool hangUnderPalm = false) {
+    float position[3], rotation[4], radius, height;
+    sLiftLocalOffset[0] = sLiftLocalOffset[1] = sLiftLocalOffset[2] = 0.0f;
+    if (!VR_GetHandPose(hand, position, rotation) || !LiftCylinder(actor, &radius, &height)) return;
+    const float base[3] = { actor->world.pos.x, actor->world.pos.y, actor->world.pos.z };
+    const float dx = position[0] - base[0], dz = position[2] - base[2];
+    const float horizontal = std::sqrt(dx * dx + dz * dz);
+    float contact[3];
+    if (hangUnderPalm) {
+        contact[0] = base[0];
+        contact[1] = base[1] + height;
+        contact[2] = base[2];
+    } else if (position[1] >= base[1] + height && horizontal <= radius) {
+        contact[0] = position[0]; // above the top: rest on the top cap
+        contact[1] = base[1] + height;
+        contact[2] = position[2];
+    } else {
+        const float nx = horizontal > 0.001f ? dx / horizontal : 1.0f;
+        const float nz = horizontal > 0.001f ? dz / horizontal : 0.0f;
+        contact[0] = base[0] + nx * radius; // side wall, even if the hand reached inside
+        contact[1] = position[1] < base[1] ? base[1] : position[1] > base[1] + height ? base[1] + height : position[1];
+        contact[2] = base[2] + nz * radius;
+    }
+    const float world[3] = { base[0] - contact[0], base[1] - contact[1], base[2] - contact[2] };
+    VrCombat::QuatRotate(rotation, world, sLiftLocalOffset, true);
+
+    // Orientation: the object's draw rotation (shape.rot, applied Y, X, Z as in Actor_Draw) made
+    // relative to the hand, so the object keeps the angle it was grabbed at and turns with the wrist.
+    // MtxF is column-major: mf[col][row].
+    MtxF objectMtx;
+    SkinMatrix_SetTranslateRotateYXZScale(&objectMtx, 1.0f, 1.0f, 1.0f, actor->shape.rot.x, actor->shape.rot.y,
+                                          actor->shape.rot.z, 0.0f, 0.0f, 0.0f);
+    float handRot[3][3];
+    VrCombat::QuatToRot(rotation, handRot);
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            float sum = 0.0f;
+            for (int k = 0; k < 3; ++k) sum += handRot[k][row] * objectMtx.mf[col][k];
+            sLiftRelRot[row][col] = sum;
+        }
+    }
+}
 bool sLiftReleaseHasGrip = false;
 
 // The candidate pointer is only trusted while the actor is still in the actor lists. Lift ticks
@@ -133,8 +184,8 @@ bool IsLiftCarry(Player* player) {
            LiftCylinder(player->heldActor, &radius, &height);
 }
 
-// Hand velocity for a release: the shared headset-rate path snapshot (last 100 ms), else the
-// runtime velocity. Physical m/s, game-facing frame.
+// Hand velocity for a release, shared by nut/bomb throws and lifted objects: the shared
+// headset-rate path snapshot (last 100 ms), else the runtime velocity. Physical m/s, game-facing frame.
 void ReleaseVelocity(int hand, float* velocity) {
     float angular[3];
     velocity[0] = velocity[1] = velocity[2] = 0.0f;
@@ -249,10 +300,23 @@ extern "C" bool VrItemThrow_GripConsumed(int32_t hand, uint16_t mask) {
 extern "C" void VrItemThrow_UpdateCarryPose(Player* player) {
     float position[3], rotation[4];
     if (VrItemThrow_LiftCarrying(player)) {
-        // One-hand hold: the object's base sits just under the hand, centered on it.
-        float radius, height;
-        if (VR_GetHandPose(sLiftHand, position, rotation) && LiftCylinder(player->heldActor, &radius, &height)) {
-            player->heldActor->world.pos = { position[0], position[1] - height * 0.5f, position[2] };
+        // One-hand hold at the grab point (CaptureLiftOffset), following the hand's rotation.
+        if (VR_GetHandPose(sLiftHand, position, rotation)) {
+            float offset[3];
+            VrCombat::QuatRotate(rotation, sLiftLocalOffset, offset);
+            player->heldActor->world.pos = { position[0] + offset[0], position[1] + offset[1], position[2] + offset[2] };
+            float handRot[3][3];
+            VrCombat::QuatToRot(rotation, handRot);
+            MtxF objectMtx = {};
+            for (int row = 0; row < 3; ++row) {
+                for (int col = 0; col < 3; ++col) {
+                    float sum = 0.0f;
+                    for (int k = 0; k < 3; ++k) sum += handRot[row][k] * sLiftRelRot[k][col];
+                    objectMtx.mf[col][row] = sum;
+                }
+            }
+            objectMtx.mf[3][3] = 1.0f;
+            Matrix_MtxFToYXZRotS(&objectMtx, &player->heldActor->shape.rot, 0);
         }
         return;
     }
@@ -260,6 +324,57 @@ extern "C" void VrItemThrow_UpdateCarryPose(Player* player) {
     if (VR_GetHandPose(CarryHand(), position, rotation)) {
         player->heldActor->world.pos = { position[0], position[1], position[2] };
     }
+}
+
+namespace {
+// Let go of the lifted object: with the holding hand's motion (scaled like nut throws, times the
+// Throw Strength setting), or dropped in place.
+void LiftRelease(PlayState* play, Player* player, bool withMotion) {
+    float velocity[3] = {};
+    if (withMotion) {
+        ReleaseVelocity(sLiftHand, velocity);
+        const float scale = WorldScale();
+        const float strength = CVarGetFloat("gVrLiftThrowStrength", 1.0f);
+        for (float& component : velocity) component *= scale * 1.4f / 20.0f * strength;
+    }
+    VR_TriggerHaptic(sLiftHand, 0.35f, 0.0f, 25.0f);
+    sLiftHand = -1;
+    sLiftReleaseHasGrip = false;
+    Player_VrReleaseLifted(play, player, velocity);
+}
+} // namespace
+
+extern "C" void VrItemThrow_LiftThrowNow(PlayState* play, Player* player) {
+    if (VrItemThrow_LiftCarrying(player)) {
+        LiftRelease(play, player, true);
+    }
+}
+
+// A-button lift (Player_ActionHandler_2 already applied vanilla's gates and chose the object):
+// the right hand, which has the A button, takes it. Within grab reach it is held at the touch point
+// like a grip grab, else it hangs under the palm. Released by a grip squeeze-and-release or by A.
+extern "C" bool VrItemThrow_LiftWithButton(PlayState* play, Player* player, Actor* actor) {
+    float radius, height;
+    if (!VrItemThrow_LiftActive(player) || actor == NULL || !LiftCylinder(actor, &radius, &height)) {
+        return false;
+    }
+    const float base[3] = { actor->world.pos.x, actor->world.pos.y, actor->world.pos.z };
+    const int hand = VR_HAND_RIGHT;
+    float distanceSq;
+    // A huge reach just measures the distance; within LiftReach() it counts as touching.
+    if (!HandNearCylinder(hand, base, radius, height, 1.0e6f, &distanceSq)) {
+        return false; // right hand not tracked: vanilla lift
+    }
+    const bool inReach = distanceSq <= LiftReach() * LiftReach();
+    CaptureLiftOffset(hand, actor, !inReach);
+    if (!Player_VrLiftActor(play, player, actor)) {
+        return false;
+    }
+    sLiftHand = hand;
+    sLiftReleaseHasGrip = false;
+    VrItemThrow_UpdateCarryPose(player);
+    VR_TriggerHaptic(hand, 0.5f, 0.0f, 35.0f);
+    return true;
 }
 
 // Grab and release of world objects. Runs every Player_UpdateItems, before the item path.
@@ -292,24 +407,19 @@ extern "C" void VrItemThrow_LiftTick(PlayState* play, Player* player) {
         return;
     }
     if (IsLiftCarry(player)) {
-        if (VR_GetGameButtons(sLiftHand) & VR_BTN_GRIP) sLiftReleaseHasGrip = true;
+        // A grip grab is armed from the start; an A-button lift arms on the next fresh squeeze, so a
+        // grip that was already held (Z-target) doesn't throw the object the moment it's let go.
+        if (pressed[sLiftHand]) sLiftReleaseHasGrip = true;
         VrItemThrow_UpdateCarryPose(player);
-        if (released[sLiftHand]) {
-            float velocity[3];
-            ReleaseVelocity(sLiftHand, velocity);
-            // A hold restored without an observed grip is a drop, never a throw.
-            if (!sLiftReleaseHasGrip) velocity[0] = velocity[1] = velocity[2] = 0.0f;
-            const float scale = WorldScale();
-            const float strength = CVarGetFloat("gVrLiftThrowStrength", 1.0f);
-            for (float& component : velocity) component *= scale * 1.4f / 20.0f * strength;
-            VR_TriggerHaptic(sLiftHand, 0.35f, 0.0f, 25.0f);
-            sLiftHand = -1;
-            sLiftReleaseHasGrip = false;
-            Player_VrReleaseLifted(play, player, velocity);
+        if (released[sLiftHand] && sLiftReleaseHasGrip) {
+            LiftRelease(play, player, true);
         }
         return;
     }
     sLiftHand = -1;
+    if (candidate != nullptr && candidateHand >= 0 && pressed[candidateHand] && player->heldActor == NULL) {
+        CaptureLiftOffset(candidateHand, candidate); // before the attach; the object is still in place
+    }
     if (candidate != nullptr && candidateHand >= 0 && pressed[candidateHand] && player->heldActor == NULL &&
         Player_VrLiftActor(play, player, candidate)) {
         sLiftHand = candidateHand;
@@ -345,24 +455,10 @@ extern "C" void VrItemThrow_Tick(PlayState* play, Player* player) {
         VrItemThrow_UpdateCarryPose(player);
         const int hand = CarryHand();
         if (released[hand]) {
-            float velocity[3] = {}, angular[3];
-            // Runtime velocities exclude locomotion/snap-turn displacement. Use the
-            // shared path snapshot if available, never drain the XR buffer again.
-            const auto& path = VrCombat::GetTickPath(hand);
-            int samples = 0;
-            if (path.count) {
-                const auto latest = path.samples[path.count - 1].timeNs;
-                for (int i = 0; i < path.count; ++i) {
-                    if (latest - path.samples[i].timeNs > 100000000ULL) continue;
-                    for (int axis = 0; axis < 3; ++axis) velocity[axis] += path.samples[i].linVelMps[axis];
-                    ++samples;
-                }
-            }
-            if (samples) {
-                for (float& component : velocity) component /= samples;
-            } else {
-                VR_GetHandVelocity(hand, velocity, angular);
-            }
+            // Runtime velocities exclude locomotion/snap-turn displacement: the shared path
+            // snapshot, never a second drain of the XR buffer (ReleaseVelocity).
+            float velocity[3];
+            ReleaseVelocity(hand, velocity);
             // A restored/interrupted hold without an observed grip is a drop, never
             // a throw using motion samples from the previous timeline.
             if (!sReleaseHasGrip) velocity[0] = velocity[1] = velocity[2] = 0.0f;

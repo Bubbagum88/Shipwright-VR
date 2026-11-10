@@ -7991,6 +7991,12 @@ s32 Player_ActionHandler_2(Player* this, PlayState* play) {
                         return 0;
                     }
 
+                    // SOH [VR] First person with motion hands: A lifts a pot, crate, small rock, bush
+                    // or bomb flower straight into the nearest hand instead of over Link's head.
+                    if (VrItemThrow_LiftWithButton(play, this, interactedActor)) {
+                        return 1;
+                    }
+
                     Player_SetupWaitForPutAway(play, this, func_8083A0F4);
                 }
 
@@ -8021,7 +8027,16 @@ s32 func_8083EAF0(Player* this, Actor* actor) {
 s32 Player_ActionHandler_9(Player* this, PlayState* play) {
     // SOH [VR] Grip release owns physical throws; A/B/C must not also start the
     // walk-dependent vanilla drop/throw animation while holding a bomb or nut.
-    if (VrItemThrow_Active(this) || VrItemThrow_LiftCarrying(this)) return 0;
+    if (VrItemThrow_Active(this)) return 0;
+    // SOH [VR] Holding a physically lifted object: A throws it with the holding hand's motion
+    // (the grip release does the same); B and the C buttons do nothing.
+    if (VrItemThrow_LiftCarrying(this)) {
+        if (CHECK_BTN_ALL(sControlInput->press.button, BTN_A)) {
+            VrItemThrow_LiftThrowNow(play, this);
+            return 1;
+        }
+        return 0;
+    }
     u16 buttonsToCheck = BTN_A | BTN_B | BTN_CLEFT | BTN_CRIGHT | BTN_CDOWN;
     if (CVarGetInteger(CVAR_ENHANCEMENT("DpadEquips"), 0) != 0) {
         buttonsToCheck |= BTN_DUP | BTN_DDOWN | BTN_DLEFT | BTN_DRIGHT;
