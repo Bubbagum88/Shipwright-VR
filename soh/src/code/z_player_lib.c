@@ -2247,31 +2247,27 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     SkinMatrix_Vec3fMtxFMultXYZ(&vrInv, &vrHandWorld, &vrLocal);
                     f32 vrLen = sqrtf(SQ(vrLocal.x) + SQ(vrLocal.y) + SQ(vrLocal.z));
                     if (vrLen > 1.0f) {
-                        // Carry the string DL's pull apex onto the hand direction (Matrix_RotateAxis
-                        // applies a right-handed rotation, so this angle and axis take +Y exactly
-                        // onto vrLocal). The slingshot's apex is authored along local -Y (headset
-                        // tuned), so it rotates +Y onto the NEGATED direction. The bow's is along +Y:
-                        // negated, its string pointed away from the pull (2026-10-28 screenshot).
-                        if (Player_HoldsSlingshot(this)) {
-                            vrLocal.x = -vrLocal.x;
-                            vrLocal.y = -vrLocal.y;
-                            vrLocal.z = -vrLocal.z;
-                        }
-                        Vec3f vrAxis = { vrLocal.z, 0.0f, -vrLocal.x }; // cross(+Y, pullDir)
-                        f32 vrAxisLen = sqrtf(SQ(vrAxis.x) + SQ(vrAxis.z));
-                        f32 vrCos = vrLocal.y / vrLen;
-                        f32 vrScale = vrLen / CVarGetFloat("gVrArcheryStringApex", 1500.0f);
-                        if (vrAxisLen > 1e-3f) {
-                            vrAxis.x /= vrAxisLen;
-                            vrAxis.z /= vrAxisLen;
-                            Matrix_RotateAxis(acosf(CLAMP(vrCos, -1.0f, 1.0f)), &vrAxis, MTXMODE_APPLY);
-                        }
-                        // The bow's apex lands on the string hand at any draw length, where the
-                        // arrow's nock is (see the held arrow in the L_HAND branch).
+                        // Shear, not rotate: the string's two ends lie on the DL's Y = 0 plane (that is
+                        // why vanilla's Y scale keeps them on the bow tips at any pull), and only the
+                        // apex is off it, along local Y. Replacing just the Y basis vector with the
+                        // pull direction moves the apex onto the hand and leaves both ends fixed, so the
+                        // string stays attached and in the bow's plane at the tips. A rotation turned
+                        // the whole string, ends included, away from the tips. The bow's apex is along
+                        // +Y; the slingshot's along -Y (headset tuned), so it takes the negated pull.
+                        // gVrArcheryStringApex is the apex's model length (String Pull Visual Scale).
+                        const f32 vrApex = CVarGetFloat("gVrArcheryStringApex", 1500.0f);
+                        f32 vrScale = vrLen / vrApex;
+                        f32 vrSign = Player_HoldsSlingshot(this) ? -1.0f : 1.0f;
                         if (Player_HoldsSlingshot(this) && (vrScale > 1.6f)) {
+                            vrSign *= 1.6f / vrScale; // slingshot band stretch cap
                             vrScale = 1.6f;
                         }
-                        Matrix_Scale(1.0f, vrScale, 1.0f, MTXMODE_APPLY);
+                        MtxF vrShear;
+                        SkinMatrix_Clear(&vrShear);
+                        vrShear.mf[1][0] = vrSign * vrLocal.x / vrApex; // MtxF is mf[col][row]
+                        vrShear.mf[1][1] = vrSign * vrLocal.y / vrApex;
+                        vrShear.mf[1][2] = vrSign * vrLocal.z / vrApex;
+                        Matrix_Mult(&vrShear, MTXMODE_APPLY);
                         // Keep the vanilla pull scalar coherent for anything else that reads it.
                         this->unk_858 = vrScale > 1.0f ? 1.0f : vrScale;
                         this->unk_85C = -0.5f;
