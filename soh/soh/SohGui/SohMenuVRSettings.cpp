@@ -1689,7 +1689,7 @@ void SohMenu::AddMenuVRSettings() {
                      .Step(1.0f)
                      .Format("%.0f")
                      .Tooltip("How close the string hand must be to the weapon hand to nock."));
-    AddWidget(devPath, "Nock Point Right: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
+    AddWidget(devPath, "Slingshot Nock Point Right: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar("gVrArcheryAnchorRight")
         .Options(FloatSliderOptions()
                      .Min(-40.0f)
@@ -1700,7 +1700,7 @@ void SohMenu::AddMenuVRSettings() {
                      .Tooltip("Moves the nock point (the marker you pinch) sideways in the weapon "
                               "hand's own frame, so it can sit on the visible string instead of "
                               "the controller. Mirrored automatically for left-handed mode."));
-    AddWidget(devPath, "Nock Point Up: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
+    AddWidget(devPath, "Slingshot Nock Point Up: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar("gVrArcheryAnchorUp")
         .Options(FloatSliderOptions()
                      .Min(-40.0f)
@@ -1709,7 +1709,7 @@ void SohMenu::AddMenuVRSettings() {
                      .Step(0.5f)
                      .Format("%.1f")
                      .Tooltip("Moves the nock point along the weapon hand's up axis."));
-    AddWidget(devPath, "Nock Point Forward: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
+    AddWidget(devPath, "Slingshot Nock Point Forward: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar("gVrArcheryAnchorFwd")
         .Options(FloatSliderOptions()
                      .Min(-40.0f)
@@ -1719,6 +1719,33 @@ void SohMenu::AddMenuVRSettings() {
                      .Format("%.1f")
                      .Tooltip("Moves the nock point along the weapon hand's pointing direction "
                               "(negative = toward you, where a slingshot pouch usually sits)."));
+    AddWidget(devPath, "Bow Nock Point Right: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrBowAnchorRight")
+        .Options(FloatSliderOptions()
+                     .Min(-40.0f)
+                     .Max(40.0f)
+                     .DefaultValue(1.3f)
+                     .Step(0.1f)
+                     .Format("%.1f")
+                     .Tooltip("Moves the bow's arrow rest (where the arrow crosses the bow) sideways in the bow hand's own frame. Mirrored automatically for left-handed mode."));
+    AddWidget(devPath, "Bow Nock Point Up: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrBowAnchorUp")
+        .Options(FloatSliderOptions()
+                     .Min(-40.0f)
+                     .Max(40.0f)
+                     .DefaultValue(-6.1f)
+                     .Step(0.1f)
+                     .Format("%.1f")
+                     .Tooltip("Moves the bow's arrow rest along the bow hand's up axis."));
+    AddWidget(devPath, "Bow Nock Point Forward: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrBowAnchorFwd")
+        .Options(FloatSliderOptions()
+                     .Min(-40.0f)
+                     .Max(40.0f)
+                     .DefaultValue(7.3f)
+                     .Step(0.1f)
+                     .Format("%.1f")
+                     .Tooltip("Moves the bow's arrow rest along the bow hand's pointing direction."));
     AddWidget(devPath, "Archery Minimum Draw: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar("gVrArcheryMinDraw")
         .Options(FloatSliderOptions()

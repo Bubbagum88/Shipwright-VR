@@ -76,10 +76,15 @@ bool NockAnchorWorld(float* out3) {
     }
     const float u = 0.01f * WorldScale(); // cm -> game units
     float mirror = CVarGetInteger("gVrLeftHanded", 0) ? -1.0f : 1.0f;
-    // Defaults are the headset-tuned slingshot values (September 14, 2026).
-    const float local[3] = { CVarGetFloat("gVrArcheryAnchorRight", 4.0f) * u * mirror,
-                             CVarGetFloat("gVrArcheryAnchorUp", -5.0f) * u,
-                             -CVarGetFloat("gVrArcheryAnchorFwd", 17.0f) * u };
+    // Each weapon has its own point: the slingshot's sits at the band (headset tuned September 14,
+    // 2026), the bow's at the arrow rest just above the hand (headset tuned November 10, 2026).
+    const Player* player = gPlayState ? GET_PLAYER(gPlayState) : nullptr;
+    const bool bow = player && player->heldItemAction != PLAYER_IA_SLINGSHOT;
+    const float local[3] = {
+        (bow ? CVarGetFloat("gVrBowAnchorRight", 1.3f) : CVarGetFloat("gVrArcheryAnchorRight", 4.0f)) * u * mirror,
+        (bow ? CVarGetFloat("gVrBowAnchorUp", -6.1f) : CVarGetFloat("gVrArcheryAnchorUp", -5.0f)) * u,
+        -(bow ? CVarGetFloat("gVrBowAnchorFwd", 7.3f) : CVarGetFloat("gVrArcheryAnchorFwd", 17.0f)) * u
+    };
     float off[3];
     VrCombat::QuatRotate(rot, local, off);
     for (int i = 0; i < 3; i++) {
@@ -725,6 +730,28 @@ extern "C" bool VrArchery_PinchConsumed(int32_t vrHand, uint16_t vrBtnMask) {
 // you pull the string back to is the angle the shot leaves at, exactly like a real string.
 // False when idle or the pull is too short to define a stable line, which lets the caller
 // fall back to the one-hand aim ray.
+// Where the drawn string and the arrow's back end meet: on the line from the nock point to the
+// string hand, a hand's width (8 cm) short of the hand's grip point (the fingers hold the string in
+// front of it), and no farther from the nock point than full draw (gVrArcheryFullDraw), so the
+// string and arrow stop there while the hand pulls on. Both the string and the arrow use this.
+extern "C" bool VrArchery_NockPoint(float* out3) {
+    float s[3], rot[4], a[3];
+    if (!sNocked || !VR_GetHandPose(StringHand(), s, rot) || !NockAnchorWorld(a)) {
+        return false;
+    }
+    const float d[3] = { s[0] - a[0], s[1] - a[1], s[2] - a[2] };
+    const float len = std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+    if (len < 0.001f) {
+        return false;
+    }
+    float pull = len - 0.08f * WorldScale();
+    pull = std::clamp(pull, 0.0f, CVarGetFloat("gVrArcheryFullDraw", 45.0f) * 0.01f * WorldScale());
+    for (int i = 0; i < 3; i++) {
+        out3[i] = a[i] + d[i] / len * pull;
+    }
+    return true;
+}
+
 extern "C" bool VrArchery_AimSegment(float* outPosDir6) {
     if (gPlayState == NULL) {
         return false;

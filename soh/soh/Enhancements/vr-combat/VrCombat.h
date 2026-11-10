@@ -195,6 +195,7 @@ bool VrArchery_StringNocked(void);
 uint16_t VrArchery_ItemButtonMask(void);
 bool VrArchery_PinchConsumed(int32_t vrHand, uint16_t vrBtnMask);
 bool VrArchery_AimSegment(float* outPosDir6);
+bool VrArchery_NockPoint(float* out3);
 void VrArchery_Reset(void);
 
 // Projectile fire (VR first person, independent of physical combat): the walk-while-aiming
