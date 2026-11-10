@@ -30,20 +30,38 @@ jobs:
       run: |
         yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
         "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.0.10792818" "cmake;3.31.5"
-    - name: Allow Quest 1 in the manifest
+    - name: Quest 1 and 2 manifest
       # The Quest 1 runtime aborts on device names it doesn't know (quest3, quest3s, questpro), so
-      # the build lists only the ones it understands.
+      # this build lists only the ones it understands.
       run: |
         sed -i 's|android:name="com.oculus.supportedDevices" android:value="[^"]*"|android:name="com.oculus.supportedDevices" android:value="quest\|quest2"|' Android/app/src/main/AndroidManifest.xml
         grep -n 'com.oculus.supportedDevices' Android/app/src/main/AndroidManifest.xml
-    - name: Build APK
+    - name: Build APK (Quest 1 and 2)
       working-directory: Android
       env:
         GIT_TAG: ${{ github.ref_name }}-${{ github.run_number }}
       run: ./gradlew assembleDebug --no-daemon --stacktrace
-    - name: Upload APK
+    - name: Upload APK (Quest 1 and 2)
       uses: actions/upload-artifact@v4
       with:
         name: quest1-oot-vr-${{ github.ref_name }}-${{ github.run_number }}
+        path: Android/app/build/outputs/apk/debug/*.apk
+        if-no-files-found: error
+    - name: Quest 3, 3S and Pro manifest
+      # Same code; only the device list differs. Gradle should only redo the manifest and packaging
+      # steps, and signs with the same debug key as the first APK of this run.
+      run: |
+        rm -f Android/app/build/outputs/apk/debug/*.apk
+        sed -i 's|android:name="com.oculus.supportedDevices" android:value="[^"]*"|android:name="com.oculus.supportedDevices" android:value="quest3\|quest3s\|questpro"|' Android/app/src/main/AndroidManifest.xml
+        grep -n 'com.oculus.supportedDevices' Android/app/src/main/AndroidManifest.xml
+    - name: Build APK (Quest 3, 3S and Pro)
+      working-directory: Android
+      env:
+        GIT_TAG: ${{ github.ref_name }}-${{ github.run_number }}
+      run: ./gradlew assembleDebug --no-daemon --stacktrace
+    - name: Upload APK (Quest 3, 3S and Pro)
+      uses: actions/upload-artifact@v4
+      with:
+        name: quest3-oot-vr-${{ github.ref_name }}-${{ github.run_number }}
         path: Android/app/build/outputs/apk/debug/*.apk
         if-no-files-found: error
