@@ -2227,6 +2227,11 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                             f32 vrArrowLen = sqrtf(SQ(sLeftHandArrowVec3.x) + SQ(sLeftHandArrowVec3.y) +
                                                    SQ(sLeftHandArrowVec3.z)) *
                                              this->actor.scale.x;
+                            // vrArrowLen is vanilla's hand-to-arrowhead distance, a stand-in for the arrow
+                            // model's head-to-nock length; gVrBowArrowBack (cm, headset tuned) moves the
+                            // arrow back along the shot line so its nock sits on the string.
+                            f32 vrWs = VR_GetWorldScale();
+                            vrArrowLen -= CVarGetFloat("gVrBowArrowBack", 0.0f) * 0.01f * (vrWs < 1.0f ? 35.0f : vrWs);
                             hookedActor->world.pos.x = vrNockPos[0] + (vrSeg[3] * vrArrowLen);
                             hookedActor->world.pos.y = vrNockPos[1] + (vrSeg[4] * vrArrowLen);
                             hookedActor->world.pos.z = vrNockPos[2] + (vrSeg[5] * vrArrowLen);
@@ -2331,7 +2336,10 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                         // local -Y (slingshot headset tuned; bow from build #17, where +Y sent the
                         // string forward as the hand pulled back), so the Y basis takes the negated
                         // pull. gVrArcheryStringApex is the apex's model length (String Pull Visual Scale).
-                        const f32 vrApex = CVarGetFloat("gVrArcheryStringApex", 1500.0f);
+                        // Each string model has its own apex length: the bow's was tuned in the headset
+                        // (November 10, 2026); the slingshot band keeps the original 1500.
+                        const f32 vrApex = vrBowNock ? CVarGetFloat("gVrBowStringApex", 1100.0f)
+                                                     : CVarGetFloat("gVrArcheryStringApex", 1500.0f);
                         // Bow: the apex goes exactly to the shared nock point (already offset and limited).
                         // Slingshot: the apex goes to the hand, pulled back toward the fork by about a
                         // hand's width, and the band stops at 1.6x its apex length. vrUnit = world units
@@ -2350,9 +2358,16 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                         f32 vrSign = -vrTarget / vrLen;
                         MtxF vrShear;
                         SkinMatrix_Clear(&vrShear);
-                        vrShear.mf[1][0] = vrSign * vrLocal.x / vrApex; // MtxF is mf[col][row]
+                        // The bow string's apex vertex is not on the model's Y axis: it sits off it along
+                        // the bow (the V landed above or below the arrow). (vrApexX, vrApexZ) is that
+                        // offset in model units, headset tuned; the Y basis is taken so the apex vertex
+                        // (vrApexX, -vrApex, vrApexZ) itself lands on the target point. The ends, at Y = 0,
+                        // are unchanged.
+                        f32 vrApexX = vrBowNock ? CVarGetFloat("gVrBowStringApexX", 0.0f) : 0.0f;
+                        f32 vrApexZ = vrBowNock ? CVarGetFloat("gVrBowStringApexZ", 0.0f) : 0.0f;
+                        vrShear.mf[1][0] = (vrSign * vrLocal.x + vrApexX) / vrApex; // MtxF is mf[col][row]
                         vrShear.mf[1][1] = vrSign * vrLocal.y / vrApex;
-                        vrShear.mf[1][2] = vrSign * vrLocal.z / vrApex;
+                        vrShear.mf[1][2] = (vrSign * vrLocal.z + vrApexZ) / vrApex;
                         Matrix_Mult(&vrShear, MTXMODE_APPLY);
                         // Keep the vanilla pull scalar coherent for anything else that reads it.
                         this->unk_858 = vrScale > 1.0f ? 1.0f : vrScale;

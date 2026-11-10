@@ -82,8 +82,8 @@ bool NockAnchorWorld(float* out3) {
     const bool bow = player && player->heldItemAction != PLAYER_IA_SLINGSHOT;
     const float local[3] = {
         (bow ? CVarGetFloat("gVrBowAnchorRight", 1.3f) : CVarGetFloat("gVrSlingshotAnchorRight", 4.0f)) * u * mirror,
-        (bow ? CVarGetFloat("gVrBowAnchorUp", -6.1f) : CVarGetFloat("gVrSlingshotAnchorUp", -5.0f)) * u,
-        -(bow ? CVarGetFloat("gVrBowAnchorFwd", 7.3f) : CVarGetFloat("gVrSlingshotAnchorFwd", 17.0f)) * u
+        (bow ? CVarGetFloat("gVrBowAnchorUp", -9.6f) : CVarGetFloat("gVrSlingshotAnchorUp", -5.0f)) * u,
+        -(bow ? CVarGetFloat("gVrBowAnchorFwd", 9.2f) : CVarGetFloat("gVrSlingshotAnchorFwd", 17.0f)) * u
     };
     float off[3];
     VrCombat::QuatRotate(rot, local, off);

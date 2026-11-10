@@ -1733,7 +1733,7 @@ void SohMenu::AddMenuVRSettings() {
         .Options(FloatSliderOptions()
                      .Min(-40.0f)
                      .Max(40.0f)
-                     .DefaultValue(-6.1f)
+                     .DefaultValue(-9.6f)
                      .Step(0.1f)
                      .Format("%.1f")
                      .Tooltip("Moves the bow's arrow rest along the bow hand's up axis."));
@@ -1742,7 +1742,7 @@ void SohMenu::AddMenuVRSettings() {
         .Options(FloatSliderOptions()
                      .Min(-40.0f)
                      .Max(40.0f)
-                     .DefaultValue(7.3f)
+                     .DefaultValue(9.2f)
                      .Step(0.1f)
                      .Format("%.1f")
                      .Tooltip("Moves the bow's arrow rest along the bow hand's pointing direction."));
@@ -1791,7 +1791,44 @@ void SohMenu::AddMenuVRSettings() {
                      .DefaultValue(false)
                      .Tooltip("While the string is drawn, show the shot's predicted flight path as a "
                               "thin line."));
-    AddWidget(devPath, "String Pull Visual Scale: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
+    AddWidget(devPath, "Bow String Pull Visual Scale: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrBowStringApex")
+        .Options(FloatSliderOptions()
+                     .Min(200.0f)
+                     .Max(5000.0f)
+                     .DefaultValue(1100.0f)
+                     .Step(25.0f)
+                     .Format("%.0f")
+                     .Tooltip("Calibrates how far the bow string's middle stretches to reach the arrow (model units). If the V overshoots the arrow, raise this; if it falls short, lower it."));
+    AddWidget(devPath, "Bow String V Offset X: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrBowStringApexX")
+        .Options(FloatSliderOptions()
+                     .Min(-1500.0f)
+                     .Max(1500.0f)
+                     .DefaultValue(0.0f)
+                     .Step(10.0f)
+                     .Format("%.0f")
+                     .Tooltip("Moves the bow string's V along one of the model's axes, to center it on the arrow. Try this and Offset Z; one of them moves the V along the bow."));
+    AddWidget(devPath, "Bow String V Offset Z: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrBowStringApexZ")
+        .Options(FloatSliderOptions()
+                     .Min(-1500.0f)
+                     .Max(1500.0f)
+                     .DefaultValue(0.0f)
+                     .Step(10.0f)
+                     .Format("%.0f")
+                     .Tooltip("Moves the bow string's V along the model's other axis, to center it on the arrow."));
+    AddWidget(devPath, "Bow Arrow Back: %.1f cm", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrBowArrowBack")
+        .Options(FloatSliderOptions()
+                     .Min(-20.0f)
+                     .Max(20.0f)
+                     .DefaultValue(0.0f)
+                     .Step(0.5f)
+                     .Format("%.1f")
+                     .Tooltip("Moves the drawn arrow back (positive) or forward along the shot line so "
+                              "its back end sits on the string's V."));
+    AddWidget(devPath, "Slingshot Band Pull Visual Scale: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar("gVrArcheryStringApex")
         .Options(FloatSliderOptions()
                      .Min(200.0f)
