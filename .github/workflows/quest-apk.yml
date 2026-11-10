@@ -30,6 +30,23 @@ jobs:
       run: |
         yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
         "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;26.0.10792818" "cmake;3.31.5"
+    - name: Set up ccache
+      # Native compile is ~30 of the ~32 minutes. ccache keeps compiled objects between runs, so a
+      # run only recompiles what changed. CMake (3.17+) picks the launcher up from the environment.
+      # The NDK is reinstalled every run, so compilers are matched by content, not timestamp.
+      run: |
+        sudo apt-get update -q && sudo apt-get install -y -q ccache
+        echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+        echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+        echo "CCACHE_DIR=$HOME/.ccache" >> "$GITHUB_ENV"
+        echo "CCACHE_COMPILERCHECK=content" >> "$GITHUB_ENV"
+        echo "CCACHE_MAXSIZE=3G" >> "$GITHUB_ENV"
+    - name: Restore ccache
+      uses: actions/cache@v4
+      with:
+        path: ~/.ccache
+        key: ccache-quest-apk-${{ github.sha }}
+        restore-keys: ccache-quest-apk-
     - name: Quest 1 and 2 manifest
       # The Quest 1 runtime aborts on device names it doesn't know (quest3, quest3s, questpro), so
       # this build lists only the ones it understands.
@@ -47,6 +64,8 @@ jobs:
         name: quest1-oot-vr-${{ github.ref_name }}-${{ github.run_number }}
         path: Android/app/build/outputs/apk/debug/*.apk
         if-no-files-found: error
+    - name: ccache stats
+      run: ccache --show-stats
     - name: Quest 3, 3S and Pro manifest
       # Same code; only the device list differs. Gradle should only redo the manifest and packaging
       # steps, and signs with the same debug key as the first APK of this run.
