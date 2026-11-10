@@ -1690,7 +1690,7 @@ void SohMenu::AddMenuVRSettings() {
                      .Format("%.0f")
                      .Tooltip("How close the string hand must be to the weapon hand to nock."));
     AddWidget(devPath, "Slingshot Nock Point Right: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
-        .CVar("gVrArcheryAnchorRight")
+        .CVar("gVrSlingshotAnchorRight")
         .Options(FloatSliderOptions()
                      .Min(-40.0f)
                      .Max(40.0f)
@@ -1701,7 +1701,7 @@ void SohMenu::AddMenuVRSettings() {
                               "hand's own frame, so it can sit on the visible string instead of "
                               "the controller. Mirrored automatically for left-handed mode."));
     AddWidget(devPath, "Slingshot Nock Point Up: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
-        .CVar("gVrArcheryAnchorUp")
+        .CVar("gVrSlingshotAnchorUp")
         .Options(FloatSliderOptions()
                      .Min(-40.0f)
                      .Max(40.0f)
@@ -1710,7 +1710,7 @@ void SohMenu::AddMenuVRSettings() {
                      .Format("%.1f")
                      .Tooltip("Moves the nock point along the weapon hand's up axis."));
     AddWidget(devPath, "Slingshot Nock Point Forward: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
-        .CVar("gVrArcheryAnchorFwd")
+        .CVar("gVrSlingshotAnchorFwd")
         .Options(FloatSliderOptions()
                      .Min(-40.0f)
                      .Max(40.0f)

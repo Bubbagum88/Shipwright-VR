@@ -81,9 +81,9 @@ bool NockAnchorWorld(float* out3) {
     const Player* player = gPlayState ? GET_PLAYER(gPlayState) : nullptr;
     const bool bow = player && player->heldItemAction != PLAYER_IA_SLINGSHOT;
     const float local[3] = {
-        (bow ? CVarGetFloat("gVrBowAnchorRight", 1.3f) : CVarGetFloat("gVrArcheryAnchorRight", 4.0f)) * u * mirror,
-        (bow ? CVarGetFloat("gVrBowAnchorUp", -6.1f) : CVarGetFloat("gVrArcheryAnchorUp", -5.0f)) * u,
-        -(bow ? CVarGetFloat("gVrBowAnchorFwd", 7.3f) : CVarGetFloat("gVrArcheryAnchorFwd", 17.0f)) * u
+        (bow ? CVarGetFloat("gVrBowAnchorRight", 1.3f) : CVarGetFloat("gVrSlingshotAnchorRight", 4.0f)) * u * mirror,
+        (bow ? CVarGetFloat("gVrBowAnchorUp", -6.1f) : CVarGetFloat("gVrSlingshotAnchorUp", -5.0f)) * u,
+        -(bow ? CVarGetFloat("gVrBowAnchorFwd", 7.3f) : CVarGetFloat("gVrSlingshotAnchorFwd", 17.0f)) * u
     };
     float off[3];
     VrCombat::QuatRotate(rot, local, off);
@@ -793,7 +793,7 @@ extern "C" bool VrArchery_AimSegment(float* outPosDir6) {
     const float len = std::sqrt(d2);
     // QuestShip: the slingshot shot leaves from BETWEEN THE TINES, not from the fork's V where
     // the string is pinched: lift the origin along the weapon hand's pointing axis (the axis the
-    // fork extends along; same frame as gVrArcheryAnchorFwd). Direction is unchanged, so aiming
+    // fork extends along; same frame as gVrSlingshotAnchorFwd). Direction is unchanged, so aiming
     // by the pull line feels the same.
     float lift[3] = { 0.0f, 0.0f, 0.0f };
     if (GET_PLAYER(gPlayState)->heldItemAction == PLAYER_IA_SLINGSHOT) {

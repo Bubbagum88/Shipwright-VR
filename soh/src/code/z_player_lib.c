@@ -1047,7 +1047,7 @@ Gfx* sBootDListGroups[][2] = {
     { gLinkAdultLeftHoverBootDL, gLinkAdultRightHoverBootDL }, // PLAYER_BOOTS_HOVER
 };
 
-void Player_VrDrawBraceletAtHand(PlayState* play, Player* this, void** skeleton, s32 dListCount);
+void Player_VrDrawBraceletAtHand(PlayState* play, Player* this, void** skeleton, Vec3s* jointTable, s32 dListCount);
 
 void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dListCount, s32 lod, s32 tunic, s32 boots,
                      s32 face, OverrideLimbDrawOpa overrideLimbDraw, PostLimbDrawOpa postLimbDraw, void* data) {
@@ -1161,7 +1161,7 @@ void Player_DrawImpl(PlayState* play, void** skeleton, Vec3s* jointTable, s32 dL
                 // with the forearm, like the gauntlets' forearm plates above.
                 if ((overrideLimbDraw == Player_OverrideLimbDrawGameplayVRFirstPerson) &&
                     CVarGetInteger("gVrMotionHands", 1)) {
-                    Player_VrDrawBraceletAtHand(play, (Player*)data, skeleton, dListCount);
+                    Player_VrDrawBraceletAtHand(play, (Player*)data, skeleton, jointTable, dListCount);
                 } else {
                     gSPDisplayList(POLY_OPA_DISP++, gLinkChildGoronBraceletDL);
                 }
@@ -1560,7 +1560,7 @@ void Player_VrWeldToSwordHand(PlayState* play, Mtx* mtx) {
 // 0x0D. Point every entry of a substitute array at (hand pose) x Translate(-wrist), where wrist is
 // the L_HAND joint's position in the forearm's space, so the bracelet sits behind the hand, touching
 // the wrist as on the full body. Each entry is a live child of the hand, so it moves at headset rate.
-void Player_VrDrawBraceletAtHand(PlayState* play, Player* this, void** skeleton, s32 dListCount) {
+void Player_VrDrawBraceletAtHand(PlayState* play, Player* this, void** skeleton, Vec3s* jointTable, s32 dListCount) {
     s32 vrHand = CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_LEFT : VR_HAND_RIGHT; // L_HAND limb
     if (!VR_IsInitialized() || (sVrHandLimbFrame[vrHand] != (s32)play->state.frames) || (dListCount <= 0)) {
         return;
@@ -1575,13 +1575,23 @@ void Player_VrDrawBraceletAtHand(PlayState* play, Player* this, void** skeleton,
     f32 palmX = meshScaled ? CVarGetFloat("gVrHandPalmX", 0.0f) : 0.0f;
     f32 palmY = meshScaled ? CVarGetFloat("gVrHandPalmY", 400.0f) : 0.0f;
     f32 palmZ = meshScaled ? CVarGetFloat("gVrHandPalmZ", 0.0f) : 0.0f;
+    // Forearm space -> hand space is the inverse of the hand joint's own transform in the skeleton,
+    // Translate(jointPos) x RotateZYX(this frame's wrist rotation, jointTable[L_HAND]), exactly as
+    // SkelAnime_DrawFlexLod builds it. Leaving out the wrist rotation turned the bracelet sideways.
+    MtxF handJoint;
+    MtxF foreToHand;
+    SkinMatrix_SetTranslateRotateZYX(&handJoint, jointTable[PLAYER_LIMB_L_HAND].x, jointTable[PLAYER_LIMB_L_HAND].y,
+                                     jointTable[PLAYER_LIMB_L_HAND].z, handLimb->jointPos.x, handLimb->jointPos.y,
+                                     handLimb->jointPos.z);
+    SkinMatrix_Invert(&handJoint, &foreToHand);
     MtxF scale;
-    MtxF wrist;
+    MtxF palm;
+    MtxF scalePalm;
     MtxF local;
     SkinMatrix_SetScale(&scale, k, k, k);
-    SkinMatrix_SetTranslate(&wrist, -(handLimb->jointPos.x + palmX), -(handLimb->jointPos.y + palmY),
-                            -(handLimb->jointPos.z + palmZ));
-    SkinMatrix_MtxFMtxFMult(&scale, &wrist, &local);
+    SkinMatrix_SetTranslate(&palm, -palmX, -palmY, -palmZ);
+    SkinMatrix_MtxFMtxFMult(&scale, &palm, &scalePalm);
+    SkinMatrix_MtxFMtxFMult(&scalePalm, &foreToHand, &local);
     MtxF world;
     SkinMatrix_MtxFMtxFMult(&sVrHandLimbMtxF[vrHand], &local, &world);
 
