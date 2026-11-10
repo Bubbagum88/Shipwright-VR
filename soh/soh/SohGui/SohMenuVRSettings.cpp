@@ -1638,6 +1638,17 @@ void SohMenu::AddMenuVRSettings() {
                               "with your sword hand and squeeze grip to grab; release grip to throw. "
                               "Switching equipment drops the held item without a throw impulse. "
                               "Disable for button-operated use after selection."));
+    AddWidget(devPath, "Bomb & Nut Throw Strength: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar("gVrItemThrowStrength")
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger("gVrPhysicalItemThrows", 1); })
+        .Options(FloatSliderOptions()
+                     .Min(0.25f)
+                     .Max(10.0f)
+                     .DefaultValue(1.0f)
+                     .Step(0.25f)
+                     .Format("%.2f")
+                     .Tooltip("Multiplies how fast a thrown bomb or nut leaves your hand. 1.0 is the "
+                              "original strength."));
     AddWidget(devPath, "Pots, Rocks & Bushes", WIDGET_SEPARATOR_TEXT);
     AddWidget(devPath, "Physical Lifting", WIDGET_CVAR_CHECKBOX)
         .CVar("gVrPhysicalLift")
@@ -1658,7 +1669,7 @@ void SohMenu::AddMenuVRSettings() {
                      .Step(0.25f)
                      .Format("%.2f")
                      .Tooltip("Multiplies how fast a lifted object leaves your hand. 1.0 is the same "
-                              "strength as bomb and nut throws."));
+                              "strength as bomb and nut throws at 1.0x."));
     AddWidget(devPath, "Grab Reach: %.0f cm", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar("gVrLiftReach")
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger("gVrPhysicalLift", 1); })

@@ -469,7 +469,8 @@ extern "C" void VrItemThrow_Tick(PlayState* play, Player* player) {
             if (!sReleaseHasGrip) velocity[0] = velocity[1] = velocity[2] = 0.0f;
             sReleaseHasGrip = false;
             const float scale = WorldScale();
-            for (float& component : velocity) component *= scale * 1.4f / 20.0f;
+            const float strength = CVarGetFloat("gVrItemThrowStrength", 1.0f);
+            for (float& component : velocity) component *= scale * 1.4f / 20.0f * strength;
             Player_VrReleaseItem(play, player, velocity);
             VR_TriggerHaptic(hand, 0.35f, 0.0f, 25.0f);
             sCarryHand = -1;
