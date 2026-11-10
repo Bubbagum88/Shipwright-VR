@@ -47,6 +47,19 @@ jobs:
         path: ~/.ccache
         key: ccache-quest-apk-${{ github.sha }}
         restore-keys: ccache-quest-apk-
+    - name: Build soh.o2r and bundle it in the APK
+      # The game can't start without soh.o2r (the port's own assets: shaders, fonts, custom models).
+      # The ROM extractor on the headset only makes oot.o2r/oot-mq.o2r; MainActivity copies
+      # assets/soh.o2r out of the APK on first launch. Without it a fresh install hangs at loading.
+      # Built with the desktop toolchain (ZAPD) from this commit, so it always matches the build.
+      # BUILD_REMOTE_CONTROL=1 makes CMake look up SDL2_net, which the Linux link list always needs.
+      run: |
+        sudo apt-get install -y -q $(cat linux-build-deps/apt.txt)
+        cmake --no-warn-unused-cli -H. -Bbuild-host -GNinja -DCMAKE_BUILD_TYPE=Release -DBUILD_REMOTE_CONTROL=1
+        cmake --build build-host --target GenerateSohOtr -j4
+        mkdir -p Android/app/src/main/assets
+        cp soh.o2r Android/app/src/main/assets/soh.o2r
+        ls -l Android/app/src/main/assets/soh.o2r
     - name: Quest 1 and 2 manifest
       # The Quest 1 runtime aborts on device names it doesn't know (quest3, quest3s, questpro), so
       # this build lists only the ones it understands.
