@@ -210,6 +210,11 @@ void ReleaseVelocity(int hand, float* velocity) {
 }
 }
 
+// Hand velocity (m/s, game axes) from the same headset-rate snapshot throws use.
+extern "C" void VrItemThrow_HandVelocity(int32_t hand, float* out3) {
+    ReleaseVelocity(hand, out3);
+}
+
 extern "C" bool VrItemThrow_LiftActive(Player* player) {
     return VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger("gVrMotionHands", 1) &&
            CVarGetInteger("gVrPhysicalLift", 1) && player && player->actor.category == ACTORCAT_PLAYER &&

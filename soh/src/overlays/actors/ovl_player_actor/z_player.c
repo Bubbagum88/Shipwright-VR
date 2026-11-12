@@ -8,6 +8,7 @@
 #include "global.h"
 #include <vr_interface.h>
 
+#include "overlays/actors/ovl_Arms_Hook/z_arms_hook.h"
 #include "overlays/actors/ovl_Bg_Heavy_Block/z_bg_heavy_block.h"
 #include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h"
 #include "overlays/actors/ovl_En_Boom/z_en_boom.h"
@@ -2124,6 +2125,32 @@ static s16 Player_VrWallFacingYaw(Player* this) {
     return (ABS(moveDiff) < ABS(headDiff)) ? this->yaw : this->actor.shape.rot.y;
 }
 
+// SOH [VR] Hookshot grapple (cheat, off by default). Hold the aim-hand trigger through the shot and
+// the hook's pull becomes physics instead of the vanilla straight-line reel: Link keeps his momentum
+// and gravity acts on him. Two modes:
+//  - Grapple: a constant acceleration toward the hook point reels him in.
+//  - Spider-Man: a rope of fixed length (the distance when it caught). When it is taut, the part of
+//    Link's velocity going away from the hook is turned along the swing instead of lost (the
+//    max-length pendulum constraint from coolasjake.github.io/projects/grappling-hooks.html), so he
+//    swings. Tugging the hook hand toward you pulls him along the rope and shortens it.
+// Letting go of the trigger lets go of the hook: Link flies on with his velocity (times the Launch
+// Strength setting) as a plain jump, with no air steering until he lands or grabs a ledge. Near the
+// hook point the vanilla pull takes over and lands him the normal way. A tap of the trigger is the
+// normal hookshot.
+static s32 sVrHookGrapple = false;  // physics pull active
+static s32 sVrHookFlinging = false; // in the air after letting go
+static f32 sVrHookRopeLen = 0.0f;   // Spider-Man rope: current length
+static s32 sVrHookTugging = false;  // a tug is in progress (one burst per tug)
+
+static s32 Player_VrHookshotGrappleEnabled(void) {
+    return VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0);
+}
+
+// Read by ArmsHook_Shoot: while true the hook holds its point and does not drive Link's velocity.
+bool Player_VrHookshotGrappleActive(void) {
+    return sVrHookGrapple;
+}
+
 // SOH [VR] Physical-combat spin attack. The swing is the attack for covered swords, so the B-held
 // charge has its own input: hold the sword hand's trigger (idle while such a sword is out) to
 // charge, then swing as you let go to release. Past that it is the game's own charge and spin
@@ -4082,9 +4109,12 @@ s32 Player_UpdateUpperBody(Player* this, PlayState* play) {
                               &this->actor.parent->id)) {
         Player_SetupAction(play, this, Player_Action_80850AEC, 1);
         this->stateFlags3 |= PLAYER_STATE3_FLYING_WITH_HOOKSHOT;
+        sVrHookGrapple = Player_VrHookshotGrappleEnabled() && VrCombat_AimTriggerHeld();
+        sVrHookRopeLen = Math_Vec3f_DistXYZ(&this->unk_3C8, &this->actor.parent->world.pos);
+        sVrHookTugging = false;
         Player_AnimPlayOnce(play, this, &gPlayerAnim_link_hook_fly_start);
         Player_StartAnimMovement(play, this, 0x9B);
-        func_80832224(this);
+        func_80832224(this); // zeroes the run speed only; actor.velocity (the momentum) is kept
         this->yaw = this->actor.shape.rot.y;
         this->actor.bgCheckFlags &= ~1;
         this->hoverBootsTimer = 0;
@@ -7698,6 +7728,11 @@ void func_8083DF68(Player* this, f32 arg1, s16 arg2) {
 
 void func_8083DFE0(Player* this, f32* arg1, s16* arg2) {
     s16 yawDiff = this->yaw - *arg2;
+
+    // SOH [VR] Hookshot grapple let-go: ballistic until landing; the stick neither steers nor caps the speed.
+    if (sVrHookFlinging) {
+        return;
+    }
 
     if (this->meleeWeaponState == 0) {
         if (GameInteractor_Should(VB_PLAYER_LIMIT_JUMP_SPEED, true, this)) {
@@ -12795,6 +12830,15 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
         // body belongs to the TARGET (Player_UpdateShapeYaw just aimed it there), not to the head.
         sVrLockOnActive = Player_VrLockOnBody(this, play);
 
+        // SOH [VR] Hookshot grapple state ends with the pull or the flight it started.
+        if (this->actionFunc != Player_Action_80850AEC) {
+            sVrHookGrapple = false;
+        }
+        if (sVrHookFlinging && ((this->actionFunc != Player_Action_8084411C) ||
+                                (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND))) {
+            sVrHookFlinging = false;
+        }
+
         if (Player_VrDirectMovement(this) && !Player_InBlockingCsMode(play, this) && !sVrLockOnActive &&
             !(this->stateFlags1 & (PLAYER_STATE1_ON_HORSE | PLAYER_STATE1_CLIMBING_LADDER |
                                    PLAYER_STATE1_CLIMBING_LEDGE | PLAYER_STATE1_HANGING_OFF_LEDGE)) &&
@@ -16057,16 +16101,165 @@ void Player_Action_808507F4(Player* this, PlayState* play) {
     Player_DecelerateToZero(this);
 }
 
+// SOH [VR] Hookshot grapple: let go of the hook and fly on with the current velocity.
+static void Player_VrHookshotLetGo(Player* this, PlayState* play) {
+    ArmsHook* hook = (ArmsHook*)this->actor.parent;
+    f32 strength = CVarGetFloat(CVAR_CHEAT("VrHookshotLaunchStrength"), 1.0f);
+    Vec3f vel = this->actor.velocity; // units per frame
+
+    sVrHookGrapple = false;
+
+    // Cut the line the same way ArmsHook_CheckForCancel does: free anything hooked and put the
+    // tip back at the hand, so the hook reels in and reattaches to Link on its own.
+    if (hook->grabbed != NULL) {
+        hook->grabbed->flags &= ~ACTOR_FLAG_HOOKSHOT_ATTACHED;
+        hook->grabbed = NULL;
+    }
+    hook->actor.child = NULL;
+    hook->timer = 0;
+    Math_Vec3f_Copy(&hook->actor.world.pos, &this->unk_3C8);
+    this->actor.parent = NULL;
+
+    this->actor.world.rot.x = this->actor.shape.rot.x = 0;
+    this->yaw = this->actor.world.rot.y = Math_Atan2S(vel.z, vel.x);
+    this->linearVelocity = sqrtf(SQ(vel.x) + SQ(vel.z)) * strength;
+    this->fallStartHeight = this->actor.world.pos.y;
+    func_80838940(this, &gPlayerAnim_link_normal_jump, vel.y * strength, play, NA_SE_VO_LI_AUTO_JUMP);
+    sVrHookFlinging = true;
+}
+
+// SOH [VR] Hookshot grapple: one tick of the rope pulling Link toward the hook point. Builds this
+// tick's velocity; the flying action below moves him by it as it always has.
+static void Player_VrHookshotGrappleStep(Player* this) {
+    Vec3f* vel = &this->actor.velocity;
+    Vec3f toHook;
+    Vec3f next;
+    f32 dist;
+
+    vel->y += REG(68) / 100.0f; // the game's own player gravity
+
+    dist = Math_Vec3f_DistXYZAndStoreDiff(&this->unk_3C8, &this->actor.parent->world.pos, &toHook);
+    if (dist < 50.0f) {
+        // Close enough: the vanilla pull finishes the trip and lands Link the normal way.
+        sVrHookGrapple = false;
+        return;
+    }
+
+    if (CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) == 0) {
+        // Grapple: accelerate toward the hook point; momentum carries everything else.
+        f32 accel = CVarGetFloat(CVAR_CHEAT("VrHookshotPull"), 3.0f) / dist;
+        vel->x += toHook.x * accel;
+        vel->y += toHook.y * accel;
+        vel->z += toHook.z * accel;
+    } else {
+        // Spider-Man: a fixed-length rope. A tug (the hook hand pulled back toward you) gives one burst
+        // along the rope and shortens it to where it ends up.
+        f32 nextDist;
+        f32 outward;
+        f32 speed;
+        f32 hand[3];
+
+        VrCombat_AimHandVelocity(hand); // m/s, game axes
+        {
+            f32 nx = toHook.x / dist;
+            f32 ny = toHook.y / dist;
+            f32 nz = toHook.z / dist;
+            f32 pull = -(hand[0] * nx + hand[1] * ny + hand[2] * nz); // hand moving away from the hook
+            if (pull > 1.5f) {
+                if (!sVrHookTugging) {
+                    f32 ws = VR_GetWorldScale();
+                    f32 impulse;
+
+                    ws = (ws < 1.0f) ? 35.0f : ws; // game units per meter, as the hand-throw code uses
+                    impulse = pull * ws / 20.0f * CVarGetFloat(CVAR_CHEAT("VrHookshotTug"), 1.0f);
+                    vel->x += nx * impulse;
+                    vel->y += ny * impulse;
+                    vel->z += nz * impulse;
+                    sVrHookTugging = true;
+                }
+            } else if (pull < 0.5f) {
+                sVrHookTugging = false;
+            }
+        }
+
+        speed = sqrtf(SQ(vel->x) + SQ(vel->y) + SQ(vel->z));
+        Math_Vec3f_Sum(&this->unk_3C8, vel, &next);
+        nextDist = Math_Vec3f_DistXYZAndStoreDiff(&next, &this->actor.parent->world.pos, &toHook);
+        if (nextDist < sVrHookRopeLen) {
+            sVrHookRopeLen = MAX(nextDist, 50.0f); // a tug or a swing upward took up the slack
+        } else if (nextDist > 0.0f) {
+            f32 nx = toHook.x / nextDist;
+            f32 ny = toHook.y / nextDist;
+            f32 nz = toHook.z / nextDist;
+            f32 tangent;
+
+            // Drop the velocity going away from the hook, then give the swing back the speed it had
+            // (capped at twice the remaining swing speed, so falling straight under the hook stops
+            // instead of jerking sideways).
+            outward = -(vel->x * nx + vel->y * ny + vel->z * nz);
+            if (outward > 0.0f) {
+                vel->x += nx * outward;
+                vel->y += ny * outward;
+                vel->z += nz * outward;
+                tangent = sqrtf(SQ(vel->x) + SQ(vel->y) + SQ(vel->z));
+                if (tangent > 0.001f) {
+                    f32 keep = MIN(speed, tangent * 2.0f) / tangent;
+                    vel->x *= keep;
+                    vel->y *= keep;
+                    vel->z *= keep;
+                }
+            }
+            // Pull back to rope length, so gravity can't stretch the rope a little every tick.
+            vel->x += nx * (nextDist - sVrHookRopeLen);
+            vel->y += ny * (nextDist - sVrHookRopeLen);
+            vel->z += nz * (nextDist - sVrHookRopeLen);
+        }
+    }
+}
+
 void Player_Action_80850AEC(Player* this, PlayState* play) {
     f32 temp;
 
     this->stateFlags2 |= PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET;
+
+    if (sVrHookGrapple && (this->actor.parent != NULL) && (this->actor.parent->id == ACTOR_ARMS_HOOK) &&
+        (this->actor.child == NULL)) {
+        if (!VrCombat_AimTriggerHeld() ||
+            ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && (this->actor.velocity.y <= 0.0f))) {
+            // Let go, or landed on the ground mid-swing.
+            Player_VrHookshotLetGo(this, play);
+            return;
+        }
+        Player_VrHookshotGrappleStep(this);
+    }
 
     if (LinkAnimation_Update(play, &this->skelAnime)) {
         Player_AnimPlayLoop(play, this, &gPlayerAnim_link_hook_fly_wait);
     }
 
     Math_Vec3f_Sum(&this->actor.world.pos, &this->actor.velocity, &this->actor.world.pos);
+
+    if (sVrHookGrapple) {
+        // SOH [VR] Hookshot grapple: the vanilla reel flies a straight, clear line, so this action
+        // skips scene collision until arrival. A rope swing doesn't, so collide like a jump: walls and
+        // ceilings stop the part of the velocity going into them.
+        Vec3f* vel = &this->actor.velocity;
+
+        Player_ProcessSceneCollision(play, this);
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
+            f32 nx = Math_SinS(this->actor.wallYaw);
+            f32 nz = Math_CosS(this->actor.wallYaw);
+            f32 into = -(vel->x * nx + vel->z * nz);
+
+            if (into > 0.0f) {
+                vel->x += nx * into;
+                vel->z += nz * into;
+            }
+        }
+        if ((this->actor.bgCheckFlags & BGCHECKFLAG_CEILING) && (vel->y > 0.0f)) {
+            vel->y = 0.0f;
+        }
+    }
 
     if (func_80834FBC(this)) {
         Math_Vec3f_Copy(&this->actor.prevPos, &this->actor.world.pos);

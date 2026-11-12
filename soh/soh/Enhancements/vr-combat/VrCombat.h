@@ -205,6 +205,11 @@ void VrArchery_Reset(void);
 // aim hand's trigger — padmgr skips its normal binding so a shot can't also toggle Z-target.
 bool VrCombat_ProjectileFirePressed(struct Player* player);
 bool VrCombat_AimTriggerConsumed(int32_t vrHand, uint16_t vrBtnMask);
+bool VrCombat_AimTriggerHeld(void);
+void VrCombat_AimHandVelocity(float* out3);
+void VrItemThrow_HandVelocity(int32_t hand, float* out3);
+// Hookshot grapple cheat (z_player.c): while true the hook holds its point instead of reeling Link in.
+bool Player_VrHookshotGrappleActive(void);
 // The physical shield's block collider, built parametrically from the Shield sliders in
 // R_HAND limb model space (outXyz4 = 4 vertices x xyz, vanilla zigzag order) — replaces the
 // vanilla stance quad, whose size/offset never matched a controller-held shield. Strictness =

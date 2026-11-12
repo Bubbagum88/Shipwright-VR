@@ -48,6 +48,11 @@ static const std::map<int32_t, const char*> dekuStickCheat = {
     { DEKU_STICK_UNBREAKABLE_AND_ALWAYS_ON_FIRE, "Unbreakable + Always on Fire" },
 };
 
+static const std::map<int32_t, const char*> vrHookshotModes = {
+    { 0, "Grapple" },
+    { 1, "Spider-Man" },
+};
+
 static const std::map<int32_t, const char*> skipForcedDialogOptions = {
     { FORCED_DIALOG_SKIP_NONE, "None" },
     { FORCED_DIALOG_SKIP_NAVI, "Navi" },
@@ -1849,6 +1854,43 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "Hookshot Reach Multiplier: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_CHEAT("HookshotReachMultiplier"))
         .Options(FloatSliderOptions().Format("%.2f").Min(1.0f).Max(5.0f));
+    AddWidget(path, "VR Hookshot Grapple", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_CHEAT("VrHookshotGrapple"))
+        .Options(CheckboxOptions().Tooltip(
+            "VR first person: fire the hookshot and keep the trigger held. Instead of the straight reel, the "
+            "rope pulls you with real momentum and gravity; let go of the trigger to let go of the hook and "
+            "fly on. Tap the trigger for the normal hookshot. The game was never designed for this: expect "
+            "places you can't get out of."));
+    AddWidget(path, "VR Hookshot Mode", WIDGET_CVAR_COMBOBOX)
+        .CVar(CVAR_CHEAT("VrHookshotMode"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0); })
+        .Options(ComboboxOptions()
+                     .ComboMap(vrHookshotModes)
+                     .DefaultIndex(0)
+                     .Tooltip("Grapple: the rope reels you in toward the hook point, keeping your momentum.\n"
+                              "Spider-Man: a fixed-length rope you swing on. Tug your hookshot hand toward you "
+                              "to pull along the rope; let go to launch."));
+    AddWidget(path, "VR Grapple Pull: %.1f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_CHEAT("VrHookshotPull"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0) ||
+                            CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) != 0;
+        })
+        .Options(FloatSliderOptions().Format("%.1f").Min(0.5f).Max(10.0f).DefaultValue(3.0f).Step(0.1f).Tooltip(
+            "How hard the rope pulls you toward the hook point each frame (game units per frame, squared)."));
+    AddWidget(path, "VR Spider-Man Tug: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_CHEAT("VrHookshotTug"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0) ||
+                            CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) != 1;
+        })
+        .Options(FloatSliderOptions().Format("%.2f").Min(0.25f).Max(4.0f).DefaultValue(1.0f).Step(0.05f).Tooltip(
+            "How much a tug of your hookshot hand pulls you along the rope."));
+    AddWidget(path, "VR Hookshot Launch Strength: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_CHEAT("VrHookshotLaunchStrength"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0); })
+        .Options(FloatSliderOptions().Format("%.2f").Min(0.25f).Max(2.0f).DefaultValue(1.0f).Step(0.05f).Tooltip(
+            "Multiplies your speed when you let go of the hook."));
 
     path.column = SECTION_COLUMN_2;
     AddWidget(path, "Misc", WIDGET_SEPARATOR_TEXT);

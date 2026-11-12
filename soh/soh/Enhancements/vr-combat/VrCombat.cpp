@@ -169,6 +169,16 @@ extern "C" bool VrCombat_ProjectileFirePressed(Player* player) {
     return sProjTriggerPressed;
 }
 
+// The aim hand's trigger is down this tick (VR first person). Hookshot grapple: held = keep the line.
+extern "C" bool VrCombat_AimTriggerHeld(void) {
+    return sProjTriggerPrev;
+}
+
+// The aim (hookshot) hand's velocity, m/s in game axes. Hookshot grapple: the Spider-Man tug.
+extern "C" void VrCombat_AimHandVelocity(float* out3) {
+    VrItemThrow_HandVelocity(AimHand(), out3);
+}
+
 extern "C" bool VrCombat_AimTriggerConsumed(int32_t vrHand, uint16_t vrBtnMask) {
     // While READY_TO_FIRE in VR first person, the aim hand's trigger IS the fire control:
     // padmgr must not also emit its normal button binding (Z-target flicker on every shot).

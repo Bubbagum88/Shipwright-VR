@@ -2,6 +2,7 @@
 #include "objects/object_link_boy/object_link_boy.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/vr-combat/VrCombat.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -202,6 +203,12 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
                     grabbed = NULL;
                 }
             }
+        }
+
+        // SOH [VR] Hookshot grapple cheat: Link's own rope physics move him (z_player.c); the hook only
+        // holds its point until he lets go or gets close, then the vanilla pull below finishes.
+        if ((this->actor.child != NULL) && Player_VrHookshotGrappleActive()) {
+            return;
         }
 
         bodyDistDiff = Math_Vec3f_DistXYZAndStoreDiff(&player->unk_3C8, &this->actor.world.pos, &bodyDistDiffVec);
