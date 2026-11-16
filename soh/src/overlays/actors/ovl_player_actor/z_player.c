@@ -3280,8 +3280,9 @@ s32 func_808351D4(Player* this, PlayState* play) {
     // holding an aim.
     // SOH [VR] Hookshot grapple cheat: the hookshot fires as soon as it is up while the trigger is
     // squeezed (selector mode would otherwise wait for the release), once per squeeze.
+    s32 vrHookCheat = sp2C && Player_VrHookshotGrappleEnabled();
     s32 vrHookFire = false;
-    if (sp2C && Player_VrHookshotGrappleEnabled()) {
+    if (vrHookCheat) {
         if (!VrCombat_AimTriggerHeld()) {
             sVrHookNeedsRelease = false;
         } else if (!sVrHookNeedsRelease) {
@@ -3291,9 +3292,6 @@ s32 func_808351D4(Player* this, PlayState* play) {
     if ((this->unk_836 > 0) &&
         (vrHookFire || (!VrItemSelect_ModeActive() && (VrCombat_ProjectileFirePressed(this) || sUseHeldItem)) ||
          (this->unk_860 < 0) || (!sHeldItemButtonIsHeldDown && !func_80834E7C(play)))) {
-        if (sp2C) {
-            sVrHookNeedsRelease = VrCombat_AimTriggerHeld();
-        }
         Player_SetUpperActionFunc(this, func_808353D8);
         if (this->unk_860 >= 0) {
             if (sp2C == 0) {
@@ -3301,13 +3299,16 @@ s32 func_808351D4(Player* this, PlayState* play) {
                     Player_PlaySfx(this, D_808543DC[ABS(this->unk_860) - 1]);
                 }
             } else if ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || vrHookFire) {
-                // SOH [VR] Hookshot grapple cheat: also fires in mid-air, so swings chain.
+                // SOH [VR] Hookshot grapple cheat: also fires in mid-air, so swings chain. Only a real shot
+                // uses up the squeeze: the first pass after the hookshot comes up is vanilla's dry pass
+                // (unk_860 < 0), which fires nothing and goes straight back to aiming.
                 func_808350A4(play, this);
+                sVrHookNeedsRelease = VrCombat_AimTriggerHeld();
             }
         }
         this->unk_834 = 10;
         // SOH [VR] Hookshot grapple cheat: a mid-air shot keeps the jump's momentum.
-        if (!vrHookFire || (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+        if (!vrHookCheat || (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
             Player_ZeroSpeedXZ(this);
         }
     } else {
