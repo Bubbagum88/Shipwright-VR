@@ -2152,6 +2152,22 @@ bool Player_VrHookshotGrappleActive(void) {
     return sVrHookGrapple;
 }
 
+// SOH [VR] Hookshot grapple diagnostics (cheat on only): one log line each time the aim state changes,
+// so a headset test shows exactly where a shot stops. Log file: SOHVR/logs.
+static void Player_VrHookLogAim(Player* this, s32 fire) {
+    static s32 sLast = -1;
+    s32 state = ((this->unk_836 > 0) << 0) | ((this->unk_860 < 0) << 1) | (VrCombat_AimTriggerHeld() << 2) |
+                (sVrHookNeedsRelease << 3) | (((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) != 0) << 4) |
+                (sHeldItemButtonIsHeldDown << 5) | (fire << 6);
+
+    if (state != sLast) {
+        sLast = state;
+        LUSLOG_INFO("[VrHook] aim: ready=%d dry=%d trigger=%d needsRelease=%d ground=%d itemBtn=%d fire=%d",
+                    (state >> 0) & 1, (state >> 1) & 1, (state >> 2) & 1, (state >> 3) & 1, (state >> 4) & 1,
+                    (state >> 5) & 1, (state >> 6) & 1);
+    }
+}
+
 // SOH [VR] Physical-combat spin attack. The swing is the attack for covered swords, so the B-held
 // charge has its own input: hold the sword hand's trigger (idle while such a sword is out) to
 // charge, then swing as you let go to release. Past that it is the game's own charge and spin
@@ -3280,14 +3296,11 @@ s32 func_808351D4(Player* this, PlayState* play) {
     // holding an aim.
     // SOH [VR] Hookshot grapple cheat: the hookshot fires as soon as it is up while the trigger is
     // squeezed (selector mode would otherwise wait for the release), once per squeeze.
+    // The squeeze is used up by the shot and given back on release (Player update, every frame).
     s32 vrHookCheat = sp2C && Player_VrHookshotGrappleEnabled();
-    s32 vrHookFire = false;
+    s32 vrHookFire = vrHookCheat && VrCombat_AimTriggerHeld() && !sVrHookNeedsRelease;
     if (vrHookCheat) {
-        if (!VrCombat_AimTriggerHeld()) {
-            sVrHookNeedsRelease = false;
-        } else if (!sVrHookNeedsRelease) {
-            vrHookFire = true;
-        }
+        Player_VrHookLogAim(this, vrHookFire);
     }
     if ((this->unk_836 > 0) &&
         (vrHookFire || (!VrItemSelect_ModeActive() && (VrCombat_ProjectileFirePressed(this) || sUseHeldItem)) ||
@@ -3302,8 +3315,12 @@ s32 func_808351D4(Player* this, PlayState* play) {
                 // SOH [VR] Hookshot grapple cheat: also fires in mid-air, so swings chain. Only a real shot
                 // uses up the squeeze: the first pass after the hookshot comes up is vanilla's dry pass
                 // (unk_860 < 0), which fires nothing and goes straight back to aiming.
-                func_808350A4(play, this);
-                sVrHookNeedsRelease = VrCombat_AimTriggerHeld();
+                s32 vrShot = func_808350A4(play, this);
+                if (vrHookCheat) {
+                    sVrHookNeedsRelease = VrCombat_AimTriggerHeld();
+                    LUSLOG_INFO("[VrHook] fire: shot=%d trigger=%d ground=%d", vrShot, VrCombat_AimTriggerHeld(),
+                                (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) != 0);
+                }
             }
         }
         this->unk_834 = 10;
@@ -4129,6 +4146,9 @@ s32 Player_UpdateUpperBody(Player* this, PlayState* play) {
         Player_SetupAction(play, this, Player_Action_80850AEC, 1);
         this->stateFlags3 |= PLAYER_STATE3_FLYING_WITH_HOOKSHOT;
         sVrHookGrapple = Player_VrHookshotGrappleEnabled(); // let go next frame if the trigger is up
+        if (sVrHookGrapple) {
+            LUSLOG_INFO("[VrHook] caught: trigger=%d", VrCombat_AimTriggerHeld());
+        }
         sVrHookRopeLen = Math_Vec3f_DistXYZ(&this->unk_3C8, &this->actor.parent->world.pos);
         sVrHookTugging = false;
         Player_AnimPlayOnce(play, this, &gPlayerAnim_link_hook_fly_start);
@@ -12849,6 +12869,11 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
         // body belongs to the TARGET (Player_UpdateShapeYaw just aimed it there), not to the head.
         sVrLockOnActive = Player_VrLockOnBody(this, play);
 
+        // SOH [VR] Hookshot grapple: a released trigger gives back the squeeze, wherever Link's upper
+        // body is (the aim action may not run again until the next squeeze has already started).
+        if (!VrCombat_AimTriggerHeld()) {
+            sVrHookNeedsRelease = false;
+        }
         // SOH [VR] Hookshot grapple state ends with the pull or the flight it started.
         if (this->actionFunc != Player_Action_80850AEC) {
             sVrHookGrapple = false;
@@ -16127,6 +16152,7 @@ static void Player_VrHookshotLetGo(Player* this, PlayState* play) {
     Vec3f vel = this->actor.velocity; // units per frame
 
     sVrHookGrapple = false;
+    LUSLOG_INFO("[VrHook] let go: vel=(%.1f, %.1f, %.1f)", vel.x, vel.y, vel.z);
 
     // Cut the line the way ArmsHook_CheckForCancel does; the hook then reels in and reattaches on its own.
     ArmsHook_ReleaseLine(hook, this);

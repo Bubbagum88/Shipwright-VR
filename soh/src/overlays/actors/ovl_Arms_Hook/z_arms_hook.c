@@ -97,6 +97,7 @@ void ArmsHook_Wait(ArmsHook* this, PlayState* play) {
         if (Player_VrHookshotGrappleEnabled()) {
             speed *= CVarGetFloat(CVAR_CHEAT("VrHookshotShotSpeed"), 1.0f);
             length = MAX((s32)(length * 20.0f / speed + 0.5f), 1);
+            LUSLOG_INFO("[VrHook] hook out: speed=%.1f frames=%d", speed, length);
         }
 
         ArmsHook_SetupAction(this, ArmsHook_Shoot);
@@ -190,6 +191,7 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
     // SOH [VR] Hookshot grapple cheat: holding the trigger is what keeps you on the line, so letting go
     // while the hook is still flying out ends the shot and it reels back without catching anything.
     if ((this->timer != 0) && Player_VrHookshotGrappleEnabled() && !VrCombat_AimTriggerHeld()) {
+        LUSLOG_INFO("[VrHook] hook recalled: trigger released with %d frames left", this->timer);
         this->timer = 0;
     }
 
