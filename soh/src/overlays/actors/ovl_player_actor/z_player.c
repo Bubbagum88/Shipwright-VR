@@ -16155,7 +16155,8 @@ static void Player_VrHookshotGrappleStep(Player* this) {
     Vec3f next;
     f32 dist;
 
-    vel->y += REG(68) / 100.0f; // the game's own player gravity
+    // The game's own player gravity, scaled by the Swing Gravity setting.
+    vel->y += REG(68) / 100.0f * CVarGetFloat(CVAR_CHEAT("VrHookshotGravity"), 1.0f);
 
     dist = Math_Vec3f_DistXYZAndStoreDiff(&this->unk_3C8, &this->actor.parent->world.pos, &n);
     if (dist < 50.0f) {
@@ -16175,17 +16176,18 @@ static void Player_VrHookshotGrappleStep(Player* this) {
         f32 pull;
         f32 speed;
         f32 nextDist;
+        f32 tugAt = CVarGetFloat(CVAR_CHEAT("VrHookshotTugThreshold"), 1.5f); // m/s
 
         VrCombat_AimHandVelocity(&hand.x);
         pull = -DOTXYZ(hand, n); // hand moving away from the hook
-        if (pull > 1.5f) {
+        if (pull > tugAt) {
             if (!sVrHookTugging) {
                 Player_VrVec3fAddScaled(vel, &n,
                                         pull * VrCombat_WorldScale() / 20.0f *
                                             CVarGetFloat(CVAR_CHEAT("VrHookshotTug"), 1.0f));
                 sVrHookTugging = true;
             }
-        } else if (pull < 0.5f) {
+        } else if (pull < tugAt / 3.0f) {
             sVrHookTugging = false;
         }
 
@@ -16193,14 +16195,15 @@ static void Player_VrHookshotGrappleStep(Player* this) {
         Math_Vec3f_Sum(&this->unk_3C8, vel, &next);
         nextDist = Math_Vec3f_DistXYZAndStoreDiff(&next, &this->actor.parent->world.pos, &n);
         if (nextDist < sVrHookRopeLen) {
-            sVrHookRopeLen = MAX(nextDist, 50.0f); // a tug or a swing upward took up the slack
+            // A tug or a swing upward took up the slack.
+            sVrHookRopeLen = MAX(nextDist, CVarGetFloat(CVAR_CHEAT("VrHookshotMinRope"), 50.0f));
         } else if (nextDist > 0.0f) {
             f32 outward;
 
             Math_Vec3f_Scale(&n, 1.0f / nextDist);
             // Drop the velocity going away from the hook, then give the swing back the speed it had
-            // (capped at twice the remaining swing speed, so falling straight under the hook stops
-            // instead of jerking sideways).
+            // (capped at Swing Speed Cap times the remaining swing speed, so falling straight under the
+            // hook stops instead of jerking sideways).
             outward = -DOTXYZ((*vel), n);
             if (outward > 0.0f) {
                 f32 tangent;
@@ -16208,7 +16211,7 @@ static void Player_VrHookshotGrappleStep(Player* this) {
                 Player_VrVec3fAddScaled(vel, &n, outward);
                 tangent = Math3D_Vec3fMagnitude(vel);
                 if (tangent > 0.001f) {
-                    Math_Vec3f_Scale(vel, MIN(speed, tangent * 2.0f) / tangent);
+                    Math_Vec3f_Scale(vel, MIN(speed, tangent * CVarGetFloat(CVAR_CHEAT("VrHookshotSwingCap"), 2.0f)) / tangent);
                 }
             }
             // Pull back to rope length, so gravity can't stretch the rope a little every tick.

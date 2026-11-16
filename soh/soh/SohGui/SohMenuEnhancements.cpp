@@ -1887,11 +1887,41 @@ void SohMenu::AddMenuEnhancements() {
         })
         .Options(FloatSliderOptions().Format("%.2f").Min(0.25f).Max(4.0f).DefaultValue(1.0f).Step(0.05f).Tooltip(
             "How much a tug of your hookshot hand pulls you along the rope."));
+    AddWidget(path, "VR Spider-Man Tug Threshold: %.1f m/s", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_CHEAT("VrHookshotTugThreshold"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0) ||
+                            CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) != 1;
+        })
+        .Options(FloatSliderOptions().Format("%.1f").Min(0.5f).Max(4.0f).DefaultValue(1.5f).Step(0.1f).Tooltip(
+            "How fast you have to yank the hookshot hand back for it to count as a tug. Lower = easier."));
+    AddWidget(path, "VR Spider-Man Swing Speed Cap: %.1fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_CHEAT("VrHookshotSwingCap"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0) ||
+                            CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) != 1;
+        })
+        .Options(FloatSliderOptions().Format("%.1f").Min(1.0f).Max(5.0f).DefaultValue(2.0f).Step(0.1f).Tooltip(
+            "When the rope goes taut, how much of your fall speed can be turned into swing. Higher = bigger "
+            "swings but more sideways jerk when you drop straight under the hook."));
+    AddWidget(path, "VR Spider-Man Shortest Rope: %.0f", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_CHEAT("VrHookshotMinRope"))
+        .PreFunc([](WidgetInfo& info) {
+            info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0) ||
+                            CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) != 1;
+        })
+        .Options(FloatSliderOptions().Format("%.0f").Min(50.0f).Max(300.0f).DefaultValue(50.0f).Step(5.0f).Tooltip(
+            "The shortest the rope can get from tugs and upswings (game units)."));
     AddWidget(path, "VR Hookshot Launch Strength: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_CHEAT("VrHookshotLaunchStrength"))
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0); })
         .Options(FloatSliderOptions().Format("%.2f").Min(0.25f).Max(2.0f).DefaultValue(1.0f).Step(0.05f).Tooltip(
             "Multiplies your speed when you let go of the hook."));
+    AddWidget(path, "VR Hookshot Swing Gravity: %.2fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_CHEAT("VrHookshotGravity"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0); })
+        .Options(FloatSliderOptions().Format("%.2f").Min(0.0f).Max(2.0f).DefaultValue(1.0f).Step(0.05f).Tooltip(
+            "Gravity while you're on the line, as a multiple of the game's normal gravity. Lower = floatier swings."));
     AddWidget(path, "VR Hookshot Shot Speed: %.1fx", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_CHEAT("VrHookshotShotSpeed"))
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0); })
