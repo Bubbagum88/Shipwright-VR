@@ -90,9 +90,17 @@ void ArmsHook_Wait(ArmsHook* this, PlayState* play) {
         // get correct timer length for hookshot or longshot
         s32 length = ((player->heldItemAction == PLAYER_IA_HOOKSHOT) ? 13 : 26) *
                      CVarGetFloat(CVAR_CHEAT("HookshotReachMultiplier"), 1.0f);
+        f32 speed = 20.0f;
+
+        // SOH [VR] Hookshot grapple cheat: a faster shot over the same reach (fewer frames out). The
+        // wall and actor checks below are swept from the last position, so a fast hook can't skip one.
+        if (Player_VrHookshotGrappleEnabled()) {
+            speed *= CVarGetFloat(CVAR_CHEAT("VrHookshotShotSpeed"), 1.0f);
+            length = MAX((s32)(length * 20.0f / speed + 0.5f), 1);
+        }
 
         ArmsHook_SetupAction(this, ArmsHook_Shoot);
-        Actor_SetProjectileSpeed(&this->actor, 20.0f);
+        Actor_SetProjectileSpeed(&this->actor, speed);
         this->actor.parent = &GET_PLAYER(play)->actor;
         this->timer = length;
     }
@@ -178,6 +186,12 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
 
     Actor_PlaySfx_Flagged2(&player->actor, NA_SE_IT_HOOKSHOT_CHAIN - SFX_FLAG);
     ArmsHook_CheckForCancel(this);
+
+    // SOH [VR] Hookshot grapple cheat: holding the trigger is what keeps you on the line, so letting go
+    // while the hook is still flying out ends the shot and it reels back without catching anything.
+    if ((this->timer != 0) && Player_VrHookshotGrappleEnabled() && !VrCombat_AimTriggerHeld()) {
+        this->timer = 0;
+    }
 
     if ((this->timer != 0) && (this->collider.base.atFlags & AT_HIT) &&
         (this->collider.info.atHitInfo->elemType != ELEMTYPE_UNK4)) {

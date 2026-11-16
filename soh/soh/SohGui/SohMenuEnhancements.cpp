@@ -1857,9 +1857,10 @@ void SohMenu::AddMenuEnhancements() {
     AddWidget(path, "VR Hookshot Grapple", WIDGET_CVAR_CHECKBOX)
         .CVar(CVAR_CHEAT("VrHookshotGrapple"))
         .Options(CheckboxOptions().Tooltip(
-            "VR first person: fire the hookshot and keep the trigger held. Instead of the straight reel, the "
-            "rope pulls you with real momentum and gravity; let go of the trigger to let go of the hook and "
-            "fly on. Tap the trigger for the normal hookshot. The game was never designed for this: expect "
+            "VR first person: squeeze the trigger to fire the hookshot and keep holding it to stay on the line. "
+            "Instead of the straight reel, the rope pulls you with real momentum and gravity; let go of the "
+            "trigger to let go of the hook and fly on. Letting go before the hook catches reels it back. The "
+            "game was never designed for this: expect "
             "places you can't get out of."));
     AddWidget(path, "VR Hookshot Mode", WIDGET_CVAR_COMBOBOX)
         .CVar(CVAR_CHEAT("VrHookshotMode"))
@@ -1891,6 +1892,11 @@ void SohMenu::AddMenuEnhancements() {
         .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0); })
         .Options(FloatSliderOptions().Format("%.2f").Min(0.25f).Max(2.0f).DefaultValue(1.0f).Step(0.05f).Tooltip(
             "Multiplies your speed when you let go of the hook."));
+    AddWidget(path, "VR Hookshot Shot Speed: %.1fx", WIDGET_CVAR_SLIDER_FLOAT)
+        .CVar(CVAR_CHEAT("VrHookshotShotSpeed"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0); })
+        .Options(FloatSliderOptions().Format("%.1f").Min(1.0f).Max(5.0f).DefaultValue(1.0f).Step(0.1f).Tooltip(
+            "How fast the hook flies out. Same reach, it just gets there sooner."));
 
     path.column = SECTION_COLUMN_2;
     AddWidget(path, "Misc", WIDGET_SEPARATOR_TEXT);

@@ -2125,9 +2125,10 @@ static s16 Player_VrWallFacingYaw(Player* this) {
     return (ABS(moveDiff) < ABS(headDiff)) ? this->yaw : this->actor.shape.rot.y;
 }
 
-// SOH [VR] Hookshot grapple (cheat, off by default). Hold the aim-hand trigger through the shot and
-// the hook's pull becomes physics instead of the vanilla straight-line reel: Link keeps his momentum
-// and gravity acts on him. Two modes:
+// SOH [VR] Hookshot grapple (cheat, off by default). The aim-hand trigger fires the hookshot as soon
+// as it is squeezed (item selector included), and holding it keeps Link on the line; let go before the
+// hook catches and it comes back without pulling. On the line, the hook's pull is physics instead of
+// the vanilla straight-line reel: Link keeps his momentum and gravity acts on him. Two modes:
 //  - Grapple: a constant acceleration toward the hook point reels him in.
 //  - Spider-Man: a rope of fixed length (the distance when it caught). When it is taut, the part of
 //    Link's velocity going away from the hook is turned along the swing instead of lost (the
@@ -2135,14 +2136,14 @@ static s16 Player_VrWallFacingYaw(Player* this) {
 //    swings. Tugging the hook hand toward you pulls him along the rope and shortens it.
 // Letting go of the trigger lets go of the hook: Link flies on with his velocity (times the Launch
 // Strength setting) as a plain jump, with no air steering until he lands or grabs a ledge. Near the
-// hook point the vanilla pull takes over and lands him the normal way. A tap of the trigger is the
-// normal hookshot.
+// hook point the vanilla pull takes over and lands him the normal way.
 static s32 sVrHookGrapple = false;  // physics pull active
+static s32 sVrHookNeedsRelease = false; // fired on this squeeze; the next shot needs a fresh one
 static s32 sVrHookFlinging = false; // in the air after letting go
 static f32 sVrHookRopeLen = 0.0f;   // Spider-Man rope: current length
 static s32 sVrHookTugging = false;  // a tug is in progress (one burst per tug)
 
-static s32 Player_VrHookshotGrappleEnabled(void) {
+s32 Player_VrHookshotGrappleEnabled(void) {
     return VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0);
 }
 
@@ -3277,21 +3278,38 @@ s32 func_808351D4(Player* this, PlayState* play) {
     // the vanilla draw-and-release below IS the natural VR bow — squeeze to draw, let go to
     // loose. A press-fire path on top would fire the instant you squeezed and there would be no
     // holding an aim.
+    // SOH [VR] Hookshot grapple cheat: the hookshot fires as soon as it is up while the trigger is
+    // squeezed (selector mode would otherwise wait for the release), once per squeeze.
+    s32 vrHookFire = false;
+    if (sp2C && Player_VrHookshotGrappleEnabled()) {
+        if (!VrCombat_AimTriggerHeld()) {
+            sVrHookNeedsRelease = false;
+        } else if (!sVrHookNeedsRelease) {
+            vrHookFire = true;
+        }
+    }
     if ((this->unk_836 > 0) &&
-        ((!VrItemSelect_ModeActive() && (VrCombat_ProjectileFirePressed(this) || sUseHeldItem)) ||
+        (vrHookFire || (!VrItemSelect_ModeActive() && (VrCombat_ProjectileFirePressed(this) || sUseHeldItem)) ||
          (this->unk_860 < 0) || (!sHeldItemButtonIsHeldDown && !func_80834E7C(play)))) {
+        if (sp2C) {
+            sVrHookNeedsRelease = VrCombat_AimTriggerHeld();
+        }
         Player_SetUpperActionFunc(this, func_808353D8);
         if (this->unk_860 >= 0) {
             if (sp2C == 0) {
                 if (!func_808350A4(play, this)) {
                     Player_PlaySfx(this, D_808543DC[ABS(this->unk_860) - 1]);
                 }
-            } else if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
+            } else if ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || vrHookFire) {
+                // SOH [VR] Hookshot grapple cheat: also fires in mid-air, so swings chain.
                 func_808350A4(play, this);
             }
         }
         this->unk_834 = 10;
-        Player_ZeroSpeedXZ(this);
+        // SOH [VR] Hookshot grapple cheat: a mid-air shot keeps the jump's momentum.
+        if (!vrHookFire || (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+            Player_ZeroSpeedXZ(this);
+        }
     } else {
         this->stateFlags1 |= PLAYER_STATE1_READY_TO_FIRE;
     }
@@ -4109,7 +4127,7 @@ s32 Player_UpdateUpperBody(Player* this, PlayState* play) {
                               &this->actor.parent->id)) {
         Player_SetupAction(play, this, Player_Action_80850AEC, 1);
         this->stateFlags3 |= PLAYER_STATE3_FLYING_WITH_HOOKSHOT;
-        sVrHookGrapple = Player_VrHookshotGrappleEnabled() && VrCombat_AimTriggerHeld();
+        sVrHookGrapple = Player_VrHookshotGrappleEnabled(); // let go next frame if the trigger is up
         sVrHookRopeLen = Math_Vec3f_DistXYZ(&this->unk_3C8, &this->actor.parent->world.pos);
         sVrHookTugging = false;
         Player_AnimPlayOnce(play, this, &gPlayerAnim_link_hook_fly_start);

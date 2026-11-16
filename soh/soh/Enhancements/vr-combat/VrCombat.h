@@ -212,6 +212,8 @@ void VrItemThrow_HandVelocity(int32_t hand, float* out3);
 float VrCombat_WorldScale(void);
 // Hookshot grapple cheat (z_player.c): while true the hook holds its point instead of reeling Link in.
 bool Player_VrHookshotGrappleActive(void);
+// Hookshot grapple cheat is on and usable (VR first person).
+int32_t Player_VrHookshotGrappleEnabled(void);
 // The physical shield's block collider, built parametrically from the Shield sliders in
 // R_HAND limb model space (outXyz4 = 4 vertices x xyz, vanilla zigzag order) — replaces the
 // vanilla stance quad, whose size/offset never matched a controller-held shield. Strictness =
