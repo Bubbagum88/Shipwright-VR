@@ -121,15 +121,21 @@ void ArmsHook_DetachHookFromActor(ArmsHook* this) {
     }
 }
 
+// Cut the line: free anything hooked and put the tip back at Link's hand, so the hook reels in.
+// SOH [VR] Split out of ArmsHook_CheckForCancel so the hookshot grapple's let-go (z_player.c) uses it too.
+void ArmsHook_ReleaseLine(ArmsHook* this, Player* player) {
+    this->timer = 0;
+    ArmsHook_DetachHookFromActor(this);
+    Math_Vec3f_Copy(&this->actor.world.pos, &player->unk_3C8);
+}
+
 s32 ArmsHook_CheckForCancel(ArmsHook* this) {
     Player* player = (Player*)this->actor.parent;
 
     if (Player_HoldsHookshot(player)) {
         if ((player->itemAction != player->heldItemAction) || (player->actor.flags & ACTOR_FLAG_TALK) ||
             ((player->stateFlags1 & (PLAYER_STATE1_DEAD | PLAYER_STATE1_DAMAGED)))) {
-            this->timer = 0;
-            ArmsHook_DetachHookFromActor(this);
-            Math_Vec3f_Copy(&this->actor.world.pos, &player->unk_3C8);
+            ArmsHook_ReleaseLine(this, player);
             return 1;
         }
     }

@@ -21,8 +21,7 @@ int sObservedItem = -1;
 bool sReleaseHasGrip = false;
 
 float WorldScale() {
-    const float scale = VR_GetWorldScale();
-    return scale < 1.0f ? 35.0f : scale;
+    return VrCombat_WorldScale();
 }
 
 int SwordHandIdx() {

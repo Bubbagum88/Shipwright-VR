@@ -208,6 +208,8 @@ bool VrCombat_AimTriggerConsumed(int32_t vrHand, uint16_t vrBtnMask);
 bool VrCombat_AimTriggerHeld(void);
 void VrCombat_AimHandVelocity(float* out3);
 void VrItemThrow_HandVelocity(int32_t hand, float* out3);
+// Game units per real meter: the world scale setting, or 35 when it isn't set (below 1).
+float VrCombat_WorldScale(void);
 // Hookshot grapple cheat (z_player.c): while true the hook holds its point instead of reeling Link in.
 bool Player_VrHookshotGrappleActive(void);
 // The physical shield's block collider, built parametrically from the Shield sliders in

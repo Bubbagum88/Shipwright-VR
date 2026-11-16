@@ -16109,15 +16109,9 @@ static void Player_VrHookshotLetGo(Player* this, PlayState* play) {
 
     sVrHookGrapple = false;
 
-    // Cut the line the same way ArmsHook_CheckForCancel does: free anything hooked and put the
-    // tip back at the hand, so the hook reels in and reattaches to Link on its own.
-    if (hook->grabbed != NULL) {
-        hook->grabbed->flags &= ~ACTOR_FLAG_HOOKSHOT_ATTACHED;
-        hook->grabbed = NULL;
-    }
+    // Cut the line the way ArmsHook_CheckForCancel does; the hook then reels in and reattaches on its own.
+    ArmsHook_ReleaseLine(hook, this);
     hook->actor.child = NULL;
-    hook->timer = 0;
-    Math_Vec3f_Copy(&hook->actor.world.pos, &this->unk_3C8);
     this->actor.parent = NULL;
 
     this->actor.world.rot.x = this->actor.shape.rot.x = 0;
@@ -16128,91 +16122,79 @@ static void Player_VrHookshotLetGo(Player* this, PlayState* play) {
     sVrHookFlinging = true;
 }
 
+// SOH [VR] Hookshot grapple: v += n * s. Used for every push along the rope or a wall normal below.
+static void Player_VrVec3fAddScaled(Vec3f* v, Vec3f* n, f32 s) {
+    v->x += n->x * s;
+    v->y += n->y * s;
+    v->z += n->z * s;
+}
+
 // SOH [VR] Hookshot grapple: one tick of the rope pulling Link toward the hook point. Builds this
 // tick's velocity; the flying action below moves him by it as it always has.
 static void Player_VrHookshotGrappleStep(Player* this) {
     Vec3f* vel = &this->actor.velocity;
-    Vec3f toHook;
+    Vec3f n; // unit vector from Link toward the hook
     Vec3f next;
     f32 dist;
 
     vel->y += REG(68) / 100.0f; // the game's own player gravity
 
-    dist = Math_Vec3f_DistXYZAndStoreDiff(&this->unk_3C8, &this->actor.parent->world.pos, &toHook);
+    dist = Math_Vec3f_DistXYZAndStoreDiff(&this->unk_3C8, &this->actor.parent->world.pos, &n);
     if (dist < 50.0f) {
         // Close enough: the vanilla pull finishes the trip and lands Link the normal way.
         sVrHookGrapple = false;
         return;
     }
+    Math_Vec3f_Scale(&n, 1.0f / dist);
 
     if (CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) == 0) {
         // Grapple: accelerate toward the hook point; momentum carries everything else.
-        f32 accel = CVarGetFloat(CVAR_CHEAT("VrHookshotPull"), 3.0f) / dist;
-        vel->x += toHook.x * accel;
-        vel->y += toHook.y * accel;
-        vel->z += toHook.z * accel;
+        Player_VrVec3fAddScaled(vel, &n, CVarGetFloat(CVAR_CHEAT("VrHookshotPull"), 3.0f));
     } else {
         // Spider-Man: a fixed-length rope. A tug (the hook hand pulled back toward you) gives one burst
         // along the rope and shortens it to where it ends up.
-        f32 nextDist;
-        f32 outward;
+        Vec3f hand; // m/s, game axes
+        f32 pull;
         f32 speed;
-        f32 hand[3];
+        f32 nextDist;
 
-        VrCombat_AimHandVelocity(hand); // m/s, game axes
-        {
-            f32 nx = toHook.x / dist;
-            f32 ny = toHook.y / dist;
-            f32 nz = toHook.z / dist;
-            f32 pull = -(hand[0] * nx + hand[1] * ny + hand[2] * nz); // hand moving away from the hook
-            if (pull > 1.5f) {
-                if (!sVrHookTugging) {
-                    f32 ws = VR_GetWorldScale();
-                    f32 impulse;
-
-                    ws = (ws < 1.0f) ? 35.0f : ws; // game units per meter, as the hand-throw code uses
-                    impulse = pull * ws / 20.0f * CVarGetFloat(CVAR_CHEAT("VrHookshotTug"), 1.0f);
-                    vel->x += nx * impulse;
-                    vel->y += ny * impulse;
-                    vel->z += nz * impulse;
-                    sVrHookTugging = true;
-                }
-            } else if (pull < 0.5f) {
-                sVrHookTugging = false;
+        VrCombat_AimHandVelocity(&hand.x);
+        pull = -DOTXYZ(hand, n); // hand moving away from the hook
+        if (pull > 1.5f) {
+            if (!sVrHookTugging) {
+                Player_VrVec3fAddScaled(vel, &n,
+                                        pull * VrCombat_WorldScale() / 20.0f *
+                                            CVarGetFloat(CVAR_CHEAT("VrHookshotTug"), 1.0f));
+                sVrHookTugging = true;
             }
+        } else if (pull < 0.5f) {
+            sVrHookTugging = false;
         }
 
-        speed = sqrtf(SQ(vel->x) + SQ(vel->y) + SQ(vel->z));
+        speed = Math3D_Vec3fMagnitude(vel);
         Math_Vec3f_Sum(&this->unk_3C8, vel, &next);
-        nextDist = Math_Vec3f_DistXYZAndStoreDiff(&next, &this->actor.parent->world.pos, &toHook);
+        nextDist = Math_Vec3f_DistXYZAndStoreDiff(&next, &this->actor.parent->world.pos, &n);
         if (nextDist < sVrHookRopeLen) {
             sVrHookRopeLen = MAX(nextDist, 50.0f); // a tug or a swing upward took up the slack
         } else if (nextDist > 0.0f) {
-            f32 nx = toHook.x / nextDist;
-            f32 ny = toHook.y / nextDist;
-            f32 nz = toHook.z / nextDist;
-            f32 tangent;
+            f32 outward;
 
+            Math_Vec3f_Scale(&n, 1.0f / nextDist);
             // Drop the velocity going away from the hook, then give the swing back the speed it had
             // (capped at twice the remaining swing speed, so falling straight under the hook stops
             // instead of jerking sideways).
-            outward = -(vel->x * nx + vel->y * ny + vel->z * nz);
+            outward = -DOTXYZ((*vel), n);
             if (outward > 0.0f) {
-                vel->x += nx * outward;
-                vel->y += ny * outward;
-                vel->z += nz * outward;
-                tangent = sqrtf(SQ(vel->x) + SQ(vel->y) + SQ(vel->z));
+                f32 tangent;
+
+                Player_VrVec3fAddScaled(vel, &n, outward);
+                tangent = Math3D_Vec3fMagnitude(vel);
                 if (tangent > 0.001f) {
-                    f32 keep = MIN(speed, tangent * 2.0f) / tangent;
-                    vel->x *= keep;
-                    vel->y *= keep;
-                    vel->z *= keep;
+                    Math_Vec3f_Scale(vel, MIN(speed, tangent * 2.0f) / tangent);
                 }
             }
             // Pull back to rope length, so gravity can't stretch the rope a little every tick.
-            vel->x += nx * (nextDist - sVrHookRopeLen);
-            vel->y += ny * (nextDist - sVrHookRopeLen);
-            vel->z += nz * (nextDist - sVrHookRopeLen);
+            Player_VrVec3fAddScaled(vel, &n, nextDist - sVrHookRopeLen);
         }
     }
 }
@@ -16247,13 +16229,11 @@ void Player_Action_80850AEC(Player* this, PlayState* play) {
 
         Player_ProcessSceneCollision(play, this);
         if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
-            f32 nx = Math_SinS(this->actor.wallYaw);
-            f32 nz = Math_CosS(this->actor.wallYaw);
-            f32 into = -(vel->x * nx + vel->z * nz);
+            Vec3f wallN = { Math_SinS(this->actor.wallYaw), 0.0f, Math_CosS(this->actor.wallYaw) };
+            f32 into = -DOTXYZ((*vel), wallN);
 
             if (into > 0.0f) {
-                vel->x += nx * into;
-                vel->z += nz * into;
+                Player_VrVec3fAddScaled(vel, &wallN, into);
             }
         }
         if ((this->actor.bgCheckFlags & BGCHECKFLAG_CEILING) && (vel->y > 0.0f)) {

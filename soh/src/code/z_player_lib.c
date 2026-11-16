@@ -2230,8 +2230,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                             // vrArrowLen is vanilla's hand-to-arrowhead distance, a stand-in for the arrow
                             // model's head-to-nock length; gVrBowArrowBack (cm, headset tuned) moves the
                             // arrow back along the shot line so its nock sits on the string.
-                            f32 vrWs = VR_GetWorldScale();
-                            vrArrowLen -= CVarGetFloat("gVrBowArrowBack", 0.0f) * 0.01f * (vrWs < 1.0f ? 35.0f : vrWs);
+                            vrArrowLen -= CVarGetFloat("gVrBowArrowBack", 0.0f) * 0.01f * VrCombat_WorldScale();
                             hookedActor->world.pos.x = vrNockPos[0] + (vrSeg[3] * vrArrowLen);
                             hookedActor->world.pos.y = vrNockPos[1] + (vrSeg[4] * vrArrowLen);
                             hookedActor->world.pos.z = vrNockPos[2] + (vrSeg[5] * vrArrowLen);
@@ -2345,12 +2344,11 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                         // hand's width, and the band stops at 1.6x its apex length. vrUnit = world units
                         // per local unit of the current matrix.
                         const f32 vrHandWidthM = 0.08f;
-                        f32 vrWorldScale = VR_GetWorldScale();
                         f32 vrUnit = sqrtf(SQ(vrCur.xx) + SQ(vrCur.yx) + SQ(vrCur.zx));
                         f32 vrTarget = vrLen;
                         if (!vrBowNock) {
                             if (vrUnit > 1e-6f) {
-                                vrTarget -= vrHandWidthM * (vrWorldScale < 1.0f ? 35.0f : vrWorldScale) / vrUnit;
+                                vrTarget -= vrHandWidthM * VrCombat_WorldScale() / vrUnit;
                             }
                             vrTarget = CLAMP(vrTarget, 0.0f, vrApex * 1.6f);
                         }

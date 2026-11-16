@@ -61,8 +61,7 @@ uint16_t PinchMask() {
 }
 
 float WorldScale() {
-    const float ws = VR_GetWorldScale();
-    return ws < 1.0f ? 35.0f : ws;
+    return VrCombat_WorldScale();
 }
 
 // The nock anchor: where the string physically lives on the weapon — the weapon-hand

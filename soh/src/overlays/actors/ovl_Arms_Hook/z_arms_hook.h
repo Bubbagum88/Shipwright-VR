@@ -20,4 +20,6 @@ typedef struct ArmsHook {
     /* 0x0214 */ ArmsHookActionFunc actionFunc;
 } ArmsHook; // size = 0x0218
 
+void ArmsHook_ReleaseLine(ArmsHook* this, Player* player);
+
 #endif

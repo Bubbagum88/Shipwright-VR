@@ -179,6 +179,11 @@ extern "C" void VrCombat_AimHandVelocity(float* out3) {
     VrItemThrow_HandVelocity(AimHand(), out3);
 }
 
+extern "C" float VrCombat_WorldScale(void) {
+    const float ws = VR_GetWorldScale();
+    return ws < 1.0f ? 35.0f : ws;
+}
+
 extern "C" bool VrCombat_AimTriggerConsumed(int32_t vrHand, uint16_t vrBtnMask) {
     // While READY_TO_FIRE in VR first person, the aim hand's trigger IS the fire control:
     // padmgr must not also emit its normal button binding (Z-target flicker on every shot).
