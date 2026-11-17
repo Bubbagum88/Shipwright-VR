@@ -2142,6 +2142,7 @@ static s32 sVrHookNeedsRelease = false; // fired on this squeeze; the next shot 
 static s32 sVrHookFlinging = false; // in the air after letting go
 static f32 sVrHookRopeLen = 0.0f;   // Spider-Man rope: current length
 static s32 sVrHookTugging = false;  // a tug is in progress (one burst per tug)
+static s32 sVrHookAirborne = false; // left the ground since catching (landing after that lets go)
 
 s32 Player_VrHookshotGrappleEnabled(void) {
     return VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0);
@@ -4151,6 +4152,7 @@ s32 Player_UpdateUpperBody(Player* this, PlayState* play) {
         }
         sVrHookRopeLen = Math_Vec3f_DistXYZ(&this->unk_3C8, &this->actor.parent->world.pos);
         sVrHookTugging = false;
+        sVrHookAirborne = false;
         Player_AnimPlayOnce(play, this, &gPlayerAnim_link_hook_fly_start);
         Player_StartAnimMovement(play, this, 0x9B);
         func_80832224(this); // zeroes the run speed only; actor.velocity (the momentum) is kept
@@ -16254,8 +16256,11 @@ void Player_Action_80850AEC(Player* this, PlayState* play) {
 
     if (sVrHookGrapple && (this->actor.parent != NULL) && (this->actor.parent->id == ACTOR_ARMS_HOOK) &&
         (this->actor.child == NULL)) {
+        // Standing on the ground when the hook catches is not a landing: the rope (or a tug) has to lift
+        // Link first (sVrHookAirborne, set after this action's own collision below), otherwise the first
+        // frame on the floor let go at once and he only hopped.
         if (!VrCombat_AimTriggerHeld() ||
-            ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && (this->actor.velocity.y <= 0.0f))) {
+            (sVrHookAirborne && (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && (this->actor.velocity.y <= 0.0f))) {
             // Let go, or landed on the ground mid-swing.
             Player_VrHookshotLetGo(this, play);
             return;
@@ -16276,6 +16281,9 @@ void Player_Action_80850AEC(Player* this, PlayState* play) {
         Vec3f* vel = &this->actor.velocity;
 
         Player_ProcessSceneCollision(play, this);
+        if (!(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+            sVrHookAirborne = true;
+        }
         if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
             Vec3f wallN = { Math_SinS(this->actor.wallYaw), 0.0f, Math_CosS(this->actor.wallYaw) };
             f32 into = -DOTXYZ((*vel), wallN);

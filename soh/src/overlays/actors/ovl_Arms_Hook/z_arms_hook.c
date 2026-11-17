@@ -319,6 +319,9 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
                                        &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale, &gSfxDefaultReverb);
             }
         } else if (CHECK_BTN_ANY(play->state.input[0].press.button, (buttonsToCheck))) {
+            if (Player_VrHookshotGrappleEnabled()) {
+                LUSLOG_INFO("[VrHook] hook recalled: button press 0x%04X", play->state.input[0].press.button);
+            }
             this->timer = 0;
         }
     }
