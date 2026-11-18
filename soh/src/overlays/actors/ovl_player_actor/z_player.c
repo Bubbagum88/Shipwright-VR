@@ -12146,7 +12146,11 @@ void Player_UpdateCamAndSeqModes(PlayState* play, Player* this) {
         if (this->csAction != 0) {
             Camera_ChangeMode(Play_GetCamera(play, 0), CAM_MODE_NORMAL);
         } else if (!(this->stateFlags1 & PLAYER_STATE1_FIRST_PERSON)) {
-            if ((this->actor.parent != NULL) && (this->stateFlags3 & PLAYER_STATE3_FLYING_WITH_HOOKSHOT)) {
+            // SOH [VR] Skipped in VR first person: the hookshot-flight camera parks its eye next to the hook,
+            // which nobody sees there, and once the hook is past the far-camera distance (1200) the VR
+            // view takes that eye for a cutscene, leaves first person and the swing with it.
+            if ((this->actor.parent != NULL) && (this->stateFlags3 & PLAYER_STATE3_FLYING_WITH_HOOKSHOT) &&
+                !(VR_IsInitialized() && VR_GetFirstPerson())) {
                 camMode = CAM_MODE_HOOKSHOT;
                 Camera_SetParam(Play_GetCamera(play, 0), 8, this->actor.parent);
             } else if (Player_Action_8084377C == this->actionFunc) {
