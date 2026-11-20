@@ -98,6 +98,12 @@ void ArmsHook_Wait(ArmsHook* this, PlayState* play) {
             speed *= CVarGetFloat(CVAR_CHEAT("VrHookshotShotSpeed"), 1.0f);
             length = MAX((s32)(length * 20.0f / speed + 0.5f), 1);
             LUSLOG_INFO("[VrHook] hook out: speed=%.1f frames=%d", speed, length);
+            // The hook sits where Link's hand was drawn last frame, but Link has moved since (he updates
+            // before the hook), so a fast-moving shot left from behind the barrel and flew parallel to
+            // the aim dot, off by one frame of Link's travel. Start it from where the hand is now.
+            this->actor.world.pos.x += player->actor.world.pos.x - player->actor.prevPos.x;
+            this->actor.world.pos.y += player->actor.world.pos.y - player->actor.prevPos.y;
+            this->actor.world.pos.z += player->actor.world.pos.z - player->actor.prevPos.z;
         }
 
         ArmsHook_SetupAction(this, ArmsHook_Shoot);
