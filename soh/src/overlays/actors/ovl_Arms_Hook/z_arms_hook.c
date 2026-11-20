@@ -396,7 +396,17 @@ void ArmsHook_Draw(Actor* thisx, PlayState* play) {
             CVarGetInteger(CVAR_ENHANCEMENT("ScaleAdultEquipmentAsChild"), 0) && LINK_IS_CHILD) {
             Matrix_Scale(0.8, 0.8, 0.8, MTXMODE_APPLY);
         }
-        gSPMatrix(POLY_OPA_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        {
+            Mtx* tipMtx = MATRIX_NEWMTX(play->state.gfxCtx);
+
+            // SOH [VR] The gun follows the live controller pose (headset rate) but the loaded tip was
+            // placed from the game-rate pose, so it trailed and wobbled on the barrel. While loaded,
+            // weld it to its hand like the bowstring.
+            if (ArmsHook_IsLoaded(this)) {
+                Player_VrWeldToHand(play, tipMtx, VrHookshot_HookHand(this));
+            }
+            gSPMatrix(POLY_OPA_DISP++, tipMtx, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        }
         if (GameInteractor_Should(VB_DRAW_HOOKSHOT_TIP, true, player, play)) {
             gSPDisplayList(POLY_OPA_DISP++, gLinkAdultHookshotTipDL);
         }

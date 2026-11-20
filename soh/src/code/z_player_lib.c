@@ -1539,12 +1539,32 @@ static s32 sVrHandInvertCulling = false;
 static MtxF sVrHandLimbMtxF[2];
 static s32 sVrHandLimbFrame[2] = { -1, -1 };
 
+// SOH [VR] A mirrored hand pose (gVrHandMirror*) is a reflection, not a rotation. At the hookshot tip,
+// after RotateZYX(0, -0x4000, -0x4000), the reflected hand axis is the matrix's X axis, while the barrel
+// (Z) and up (Y) are true. Matrix_MtxFToYXZRotS takes the roll from X, so on the mirrored hand the
+// loaded hook's tip rolled the wrong way as the controller turned. Flip X back to get the rotation
+// that keeps barrel and up.
+static void Player_VrUnmirrorAxes(MtxF* mf) {
+    f32 det = mf->xx * (mf->yy * mf->zz - mf->zy * mf->yz) - mf->yx * (mf->xy * mf->zz - mf->zy * mf->xz) +
+              mf->zx * (mf->xy * mf->yz - mf->yy * mf->xz);
+
+    if (det < 0.0f) {
+        mf->mf[0][0] = -mf->mf[0][0];
+        mf->mf[0][1] = -mf->mf[0][1];
+        mf->mf[0][2] = -mf->mf[0][2];
+    }
+}
+
 // SOH [VR] For effects built on mf_9E0 (the sword hand's game-rate pose), such as the spin charge
 // glow and sparkles: with the current matrix stack as the effect's pose, register its new Mtx as a
 // child of the live sword hand so it stays on the sword at headset rate. Needs the player drawn
 // first this frame (true for later actor categories); otherwise the plain matrix is left as is.
 void Player_VrWeldToSwordHand(PlayState* play, Mtx* mtx) {
-    s32 vrHand = CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_LEFT : VR_HAND_RIGHT; // L_HAND limb
+    Player_VrWeldToHand(play, mtx, CVarGetInteger("gVrLeftHanded", 0) ? VR_HAND_LEFT : VR_HAND_RIGHT); // L_HAND limb
+}
+
+// SOH [VR] The same for either VR hand (VR_HAND_LEFT / VR_HAND_RIGHT), e.g. a loaded hookshot tip.
+void Player_VrWeldToHand(PlayState* play, Mtx* mtx, s32 vrHand) {
     if (VR_IsInitialized() && VR_GetFirstPerson() && CVarGetInteger("gVrMotionHands", 1) &&
         (sVrHandLimbFrame[vrHand] == (s32)play->state.frames)) {
         MtxF vrCur;
@@ -2278,6 +2298,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     Matrix_MultVec3f(&D_80126190, &vrSecond->actor.world.pos);
                     Matrix_RotateZYX(0, -0x4000, -0x4000, MTXMODE_APPLY);
                     Matrix_Get(&vrSecondMf);
+                    Player_VrUnmirrorAxes(&vrSecondMf);
                     Matrix_MtxFToYXZRotS(&vrSecondMf, &vrSecond->actor.world.rot, 0);
                     vrSecond->actor.shape.rot = vrSecond->actor.world.rot;
                     if (func_8002DD78(this) != 0) {
@@ -2462,6 +2483,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
                     Matrix_MultVec3f(&D_80126190, &heldActor->world.pos);
                     Matrix_RotateZYX(0, -0x4000, -0x4000, MTXMODE_APPLY);
                     Matrix_Get(&sp44);
+                    Player_VrUnmirrorAxes(&sp44);
                     Matrix_MtxFToYXZRotS(&sp44, &heldActor->world.rot, 0);
                     heldActor->shape.rot = heldActor->world.rot;
                     // SOH [VR] No aim-ray override for the hookshot: the gun model rides the
