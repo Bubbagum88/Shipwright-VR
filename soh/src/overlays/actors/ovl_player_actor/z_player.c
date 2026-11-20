@@ -16179,6 +16179,18 @@ void Player_Action_80850AEC(Player* this, PlayState* play) {
 
     this->stateFlags2 |= PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET;
 
+    // SOH [VR] Dual hookshots: this action never runs the upper-body item code that fires the hookshot
+    // (func_808351D4), so while Link hangs from the second hook, the first one, loaded in the item hand,
+    // fires from here on a fresh squeeze of its trigger.
+    if (sVrHookGrapple && (this->actor.parent != NULL) && (this->actor.parent->id == ACTOR_ARMS_HOOK) &&
+        ((ArmsHook*)this->actor.parent)->vrSecond && (this->heldActor != NULL) &&
+        (this->heldActor->id == ACTOR_ARMS_HOOK) && VrCombat_AimTriggerHeld() && !sVrHookNeedsRelease) {
+        s32 vrShot = func_808350A4(play, this);
+
+        sVrHookNeedsRelease = true;
+        LUSLOG_INFO("[VrHook] fire: first hook while on the second, shot=%d", vrShot);
+    }
+
     if (sVrHookGrapple && (this->actor.parent != NULL) && (this->actor.parent->id == ACTOR_ARMS_HOOK) &&
         !VrHookshot_HangHookHome(this)) {
         // Standing on the ground when the hook catches is not a landing: the rope (or a tug) has to lift
