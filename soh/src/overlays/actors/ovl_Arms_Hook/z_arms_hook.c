@@ -104,6 +104,10 @@ void ArmsHook_Wait(ArmsHook* this, PlayState* play) {
             this->actor.world.pos.x += player->actor.world.pos.x - player->actor.prevPos.x;
             this->actor.world.pos.y += player->actor.world.pos.y - player->actor.prevPos.y;
             this->actor.world.pos.z += player->actor.world.pos.z - player->actor.prevPos.z;
+            // Every actor's fall speed is capped at 20 per frame (Actor_Init), which a 20-speed shot never
+            // reaches. A faster shot aimed downward lost its vertical speed to that cap, flew flatter than
+            // the barrel (toward where Link looks) and drew its tip at the flattened angle.
+            this->actor.minVelocityY = -speed;
         }
 
         ArmsHook_SetupAction(this, ArmsHook_Shoot);
