@@ -13,6 +13,8 @@
 
 #include <vr_interface.h>
 #include "soh/Enhancements/vr-combat/VrCombat.h"
+#include "soh/Enhancements/vr-combat/VrHookshot.h"
+#include "overlays/actors/ovl_Arms_Hook/z_arms_hook.h"
 
 #include <stdlib.h>
 
@@ -1673,7 +1675,13 @@ s32 Player_OverrideLimbDrawGameplayVRFirstPerson(PlayState* play, s32 limbIndex,
             // items' face designs — the sword survives that, but the shield's crest reads as
             // upside-down, so mirroring is toggleable per hand.
             s32 mirror;
-            if (limbIndex == PLAYER_LIMB_L_HAND) {
+            // SOH [VR] Dual hookshots: the sword hand draws the second hookshot, which is a right-hand
+            // mesh, so it is mirrored only on the left controller (left-handed play).
+            s32 vrSecondGun = (limbIndex == PLAYER_LIMB_L_HAND) && VrHookshot_DualActive();
+            if (vrSecondGun) {
+                mirror = leftHanded && CVarGetInteger("gVrHandMirrorShield", 1);
+                *dList = gLinkAdultRightHandHoldingHookshotNearDL;
+            } else if (limbIndex == PLAYER_LIMB_L_HAND) {
                 mirror = !leftHanded && CVarGetInteger("gVrHandMirrorSword", 1);
             } else {
                 mirror = !leftHanded && CVarGetInteger("gVrHandMirrorShield", 1);
@@ -1682,8 +1690,8 @@ s32 Player_OverrideLimbDrawGameplayVRFirstPerson(PlayState* play, s32 limbIndex,
             // QuestShip: shrink the hand mesh only while this hand is empty (open or fist); a hand
             // holding something is drawn as one hand+item mesh, which must keep its size.
             VR_SetHandMeshScaled(vrHand, (limbIndex == PLAYER_LIMB_L_HAND)
-                                             ? (this->leftHandType == PLAYER_MODELTYPE_LH_OPEN ||
-                                                this->leftHandType == PLAYER_MODELTYPE_LH_CLOSED)
+                                             ? (!vrSecondGun && (this->leftHandType == PLAYER_MODELTYPE_LH_OPEN ||
+                                                                 this->leftHandType == PLAYER_MODELTYPE_LH_CLOSED))
                                              : (this->rightHandType == PLAYER_MODELTYPE_RH_OPEN ||
                                                 this->rightHandType == PLAYER_MODELTYPE_RH_CLOSED));
             VR_SetHandMirror(vrHand, mirror);
@@ -2253,6 +2261,34 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
             } else {
                 Matrix_Get(&this->mf_9E0);
                 Matrix_MtxFToYXZRotS(&this->mf_9E0, &this->unk_3BC, 0);
+            }
+        }
+
+        // SOH [VR] Dual hookshots: the second gun rides this hand. Same placement as the R_HAND
+        // hookshot below: barrel origin, the loaded hook at the tip pointing down the barrel, aim dot.
+        if ((this->actor.scale.y >= 0.0f) && VrHookshot_DualActive()) {
+            ArmsHook* vrSecond = VrHookshot_FindHook(play, true);
+
+            if (vrSecond != NULL) {
+                Matrix_Push();
+                Matrix_MultVec3f(&D_80126184, &vrSecond->vrOrigin);
+                if (ArmsHook_IsLoaded(vrSecond)) {
+                    MtxF vrSecondMf;
+
+                    Matrix_MultVec3f(&D_80126190, &vrSecond->actor.world.pos);
+                    Matrix_RotateZYX(0, -0x4000, -0x4000, MTXMODE_APPLY);
+                    Matrix_Get(&vrSecondMf);
+                    Matrix_MtxFToYXZRotS(&vrSecondMf, &vrSecond->actor.world.rot, 0);
+                    vrSecond->actor.shape.rot = vrSecond->actor.world.rot;
+                    if (func_8002DD78(this) != 0) {
+                        Matrix_Translate(500.0f, 300.0f, 0.0f, MTXMODE_APPLY);
+                        Player_DrawHookshotReticle(
+                            play, this,
+                            ((this->heldItemAction == PLAYER_IA_HOOKSHOT) ? 38600.0f : 77600.0f) *
+                                CVarGetFloat(CVAR_CHEAT("HookshotReachMultiplier"), 1.0f));
+                    }
+                }
+                Matrix_Pop();
             }
         }
     } else if (limbIndex == PLAYER_LIMB_R_HAND) {

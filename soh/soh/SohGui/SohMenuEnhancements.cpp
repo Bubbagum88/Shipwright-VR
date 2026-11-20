@@ -1874,6 +1874,13 @@ void SohMenu::AddMenuEnhancements() {
                               "to pull along the rope; let go to launch.\n"
                               "Both: swing like Spider-Man (tugs work too); push the move stick forward to reel "
                               "in, back to let rope out."));
+    AddWidget(path, "VR Dual Hookshots", WIDGET_CVAR_CHECKBOX)
+        .CVar(CVAR_CHEAT("VrHookshotDual"))
+        .PreFunc([](WidgetInfo& info) { info.isHidden = !CVarGetInteger(CVAR_CHEAT("VrHookshotGrapple"), 0); })
+        .Options(CheckboxOptions().Tooltip(
+            "Needs motion hands. While the hookshot is held, a second hookshot appears in your sword hand and "
+            "its trigger fires it instead of charging a spin attack. Both hooks use the mode above. Turn off "
+            "to get the sword-hand trigger back."));
     AddWidget(path, "VR Grapple Pull: %.1f", WIDGET_CVAR_SLIDER_FLOAT)
         .CVar(CVAR_CHEAT("VrHookshotPull"))
         .PreFunc([](WidgetInfo& info) {

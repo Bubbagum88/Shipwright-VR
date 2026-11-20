@@ -207,6 +207,9 @@ bool VrCombat_ProjectileFirePressed(struct Player* player);
 bool VrCombat_AimTriggerConsumed(int32_t vrHand, uint16_t vrBtnMask);
 bool VrCombat_AimTriggerHeld(void);
 void VrCombat_AimHandVelocity(float* out3);
+// The VR hand that aims held projectiles (the hookshot's), and the sword hand.
+int32_t VrCombat_AimHandIndex(void);
+int32_t VrCombat_SwordHandIndex(void);
 void VrItemThrow_HandVelocity(int32_t hand, float* out3);
 // Game units per real meter: the world scale setting, or 35 when it isn't set (below 1).
 float VrCombat_WorldScale(void);

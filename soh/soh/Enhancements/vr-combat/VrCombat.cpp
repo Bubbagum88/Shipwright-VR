@@ -13,6 +13,8 @@ extern "C" {
 extern PlayState* gPlayState;
 }
 
+extern "C" int32_t VrHookshot_DualActive(void); // VrHookshot.c
+
 namespace {
 
 VrCombat::TickPath sTickPath[2];
@@ -33,6 +35,7 @@ bool InterfaceOk() {
     }
     return ok;
 }
+
 
 bool sWasActive = false;
 bool sSwingWasActive = false;
@@ -96,8 +99,9 @@ void OnPlayerUpdateVrCombat() {
     // Spin attack trigger edges, the last damaging swing, and one buzz when the charge is full.
     {
         sSpinTick++;
-        const bool cur =
-            VR_IsInitialized() && VR_GetFirstPerson() && (VR_GetGameButtons(SpinHand()) & VR_BTN_TRIGGER);
+        // Dual hookshots: the sword-hand trigger fires the second hook instead (VrHookshot.c).
+        const bool cur = VR_IsInitialized() && VR_GetFirstPerson() &&
+                         (VR_GetGameButtons(SpinHand()) & VR_BTN_TRIGGER) && !VrHookshot_DualActive();
         if (cur && !sSpinHeld) {
             sSpinArmed = true;
         } else if (!cur) {
@@ -177,6 +181,14 @@ extern "C" bool VrCombat_AimTriggerHeld(void) {
 // The aim (hookshot) hand's velocity, m/s in game axes. Hookshot grapple: the Spider-Man tug.
 extern "C" void VrCombat_AimHandVelocity(float* out3) {
     VrItemThrow_HandVelocity(AimHand(), out3);
+}
+
+extern "C" int32_t VrCombat_AimHandIndex(void) {
+    return AimHand();
+}
+
+extern "C" int32_t VrCombat_SwordHandIndex(void) {
+    return SpinHand();
 }
 
 extern "C" float VrCombat_WorldScale(void) {

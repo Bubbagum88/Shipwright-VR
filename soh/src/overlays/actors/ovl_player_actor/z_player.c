@@ -4147,7 +4147,8 @@ s32 Player_UpdateUpperBody(Player* this, PlayState* play) {
         this->stateFlags3 |= PLAYER_STATE3_FLYING_WITH_HOOKSHOT;
         sVrHookGrapple = Player_VrHookshotGrappleEnabled(); // let go next frame if the trigger is up
         if (sVrHookGrapple) {
-            LUSLOG_INFO("[VrHook] caught: trigger=%d", VrCombat_AimTriggerHeld());
+            LUSLOG_INFO("[VrHook] caught: %s hook, trigger=%d", ((ArmsHook*)this->actor.parent)->vrSecond ? "second" : "first",
+                        VrHookshot_TriggerHeld((ArmsHook*)this->actor.parent));
         }
         VrHookshot_OnCatch(this);
         sVrHookAirborne = false;
@@ -12878,6 +12879,8 @@ void Player_UpdateCommon(Player* this, PlayState* play, Input* input) {
         if (!VrCombat_AimTriggerHeld()) {
             sVrHookNeedsRelease = false;
         }
+        // SOH [VR] Dual hookshots: the second hook's spawn, fire and let-go (VrHookshot.c).
+        VrHookshot_Tick(this, play);
         // SOH [VR] Hookshot grapple state ends with the pull or the flight it started.
         if (this->actionFunc != Player_Action_80850AEC) {
             sVrHookGrapple = false;
@@ -16177,11 +16180,11 @@ void Player_Action_80850AEC(Player* this, PlayState* play) {
     this->stateFlags2 |= PLAYER_STATE2_DISABLE_ROTATION_Z_TARGET;
 
     if (sVrHookGrapple && (this->actor.parent != NULL) && (this->actor.parent->id == ACTOR_ARMS_HOOK) &&
-        (this->actor.child == NULL)) {
+        !VrHookshot_HangHookHome(this)) {
         // Standing on the ground when the hook catches is not a landing: the rope (or a tug) has to lift
         // Link first (sVrHookAirborne, set after this action's own collision below), otherwise the first
         // frame on the floor let go at once and he only hopped.
-        if (!VrCombat_AimTriggerHeld() ||
+        if (!VrHookshot_TriggerHeld((ArmsHook*)this->actor.parent) ||
             (sVrHookAirborne && (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && (this->actor.velocity.y <= 0.0f))) {
             // Let go, or landed on the ground mid-swing.
             Player_VrHookshotLetGo(this, play);
@@ -16219,7 +16222,8 @@ void Player_Action_80850AEC(Player* this, PlayState* play) {
         }
     }
 
-    if (func_80834FBC(this)) {
+    // SOH [VR] Dual hookshots: only the hook Link hangs from coming home ends the flight.
+    if (VrHookshot_HangHookHome(this) && func_80834FBC(this)) {
         Math_Vec3f_Copy(&this->actor.prevPos, &this->actor.world.pos);
         Player_ProcessSceneCollision(play, this);
 

@@ -5,6 +5,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/controls/Mouse.h"
 #include "soh/Enhancements/vr-combat/VrCombat.h"
+#include "soh/Enhancements/vr-combat/VrHookshot.h"
 #include "soh/OTRGlobals.h"
 #include "soh/ResourceManagerHelpers.h"
 
@@ -457,7 +458,8 @@ void PadMgr_HandleRetraceMsg(PadMgr* padMgr) {
                         VrItemSelect_SwapConsumed(vrHandIdx, sVrBtnMasks[vrBtnIdx]) ||
                         VrItemThrow_GripConsumed(vrHandIdx, sVrBtnMasks[vrBtnIdx]) ||
                         VrArchery_PinchConsumed(vrHandIdx, sVrBtnMasks[vrBtnIdx]) ||
-                        VrCombat_AimTriggerConsumed(vrHandIdx, sVrBtnMasks[vrBtnIdx])) {
+                        VrCombat_AimTriggerConsumed(vrHandIdx, sVrBtnMasks[vrBtnIdx]) ||
+                        VrHookshot_TriggerConsumed(vrHandIdx, sVrBtnMasks[vrBtnIdx])) {
                         continue;
                     }
                     if (vrState & sVrBtnMasks[vrBtnIdx]) {

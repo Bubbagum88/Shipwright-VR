@@ -3,6 +3,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/vr-combat/VrCombat.h"
+#include "soh/Enhancements/vr-combat/VrHookshot.h"
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -119,10 +120,27 @@ void ArmsHook_Wait(ArmsHook* this, PlayState* play) {
 
 void ArmsHook_PullPlayer(ArmsHook* this) {
     this->actor.child = this->actor.parent;
-    this->actor.parent->parent = &this->actor;
+    // SOH [VR] Dual hookshots: Link already on the other hook's line stays on it; this one holds
+    // its point and adds its own rope (VrHookshot.c).
+    if (!VrHookshot_DualActive() || (this->actor.parent->parent == NULL)) {
+        this->actor.parent->parent = &this->actor;
+    }
+}
+
+Vec3f* ArmsHook_Origin(ArmsHook* this, Player* player) {
+    return this->vrSecond ? &this->vrOrigin : &player->unk_3C8;
+}
+
+s32 ArmsHook_IsLoaded(ArmsHook* this) {
+    return (this->actionFunc == ArmsHook_Wait) && (this->actor.parent != NULL);
 }
 
 s32 ArmsHook_AttachToPlayer(ArmsHook* this, Player* player) {
+    // SOH [VR] Dual hookshots: the second hook is back in its gun by being back in ArmsHook_Wait;
+    // Link's held-item fields belong to the first hook.
+    if (this->vrSecond) {
+        return false;
+    }
     player->actor.child = &this->actor;
     player->heldActor = &this->actor;
     if (this->actor.child != NULL) {
@@ -145,7 +163,7 @@ void ArmsHook_DetachHookFromActor(ArmsHook* this) {
 void ArmsHook_ReleaseLine(ArmsHook* this, Player* player) {
     this->timer = 0;
     ArmsHook_DetachHookFromActor(this);
-    Math_Vec3f_Copy(&this->actor.world.pos, &player->unk_3C8);
+    Math_Vec3f_Copy(&this->actor.world.pos, ArmsHook_Origin(this, player));
 }
 
 s32 ArmsHook_CheckForCancel(ArmsHook* this) {
@@ -189,7 +207,8 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
     f32 velocity;
     s32 pad1;
 
-    if ((this->actor.parent == NULL) || (!Player_HoldsHookshot(player))) {
+    if ((this->actor.parent == NULL) || (!Player_HoldsHookshot(player)) ||
+        (this->vrSecond && !VrHookshot_DualActive())) {
         ArmsHook_DetachHookFromActor(this);
         Actor_Kill(&this->actor);
         return;
@@ -200,7 +219,7 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
 
     // SOH [VR] Hookshot grapple cheat: holding the trigger is what keeps you on the line, so letting go
     // while the hook is still flying out ends the shot and it reels back without catching anything.
-    if ((this->timer != 0) && Player_VrHookshotGrappleEnabled() && !VrCombat_AimTriggerHeld()) {
+    if ((this->timer != 0) && Player_VrHookshotGrappleEnabled() && !VrHookshot_TriggerHeld(this)) {
         LUSLOG_INFO("[VrHook] hook recalled: trigger released with %d frames left", this->timer);
         this->timer = 0;
     }
@@ -239,11 +258,14 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
 
         // SOH [VR] Hookshot grapple cheat: Link's own rope physics move him (z_player.c); the hook only
         // holds its point until he lets go or gets close, then the vanilla pull below finishes.
-        if ((this->actor.child != NULL) && Player_VrHookshotGrappleActive()) {
+        // With dual hookshots a hook can hold its point while Link is between ropes (he let go of the
+        // other one and takes this one next frame); the vanilla pull must not grab him then either.
+        if ((this->actor.child != NULL) && (Player_VrHookshotGrappleActive() || VrHookshot_DualActive())) {
             return;
         }
 
-        bodyDistDiff = Math_Vec3f_DistXYZAndStoreDiff(&player->unk_3C8, &this->actor.world.pos, &bodyDistDiffVec);
+        bodyDistDiff =
+            Math_Vec3f_DistXYZAndStoreDiff(ArmsHook_Origin(this, player), &this->actor.world.pos, &bodyDistDiffVec);
         if (bodyDistDiff < 30.0f) {
             velocity = 0.0f;
             phi_f16 = 0.0f;
@@ -271,7 +293,7 @@ void ArmsHook_Shoot(ArmsHook* this, PlayState* play) {
                 Math_Vec3f_Diff(&grabbed->world.pos, &this->grabbedDistDiff, &this->actor.world.pos);
                 phi_f16 = 1.0f;
             } else {
-                Math_Vec3f_Sum(&player->unk_3C8, &newPos, &this->actor.world.pos);
+                Math_Vec3f_Sum(ArmsHook_Origin(this, player), &newPos, &this->actor.world.pos);
                 if (grabbed != NULL) {
                     Math_Vec3f_Sum(&this->actor.world.pos, &this->grabbedDistDiff, &grabbed->world.pos);
                 }
@@ -379,7 +401,7 @@ void ArmsHook_Draw(Actor* thisx, PlayState* play) {
             gSPDisplayList(POLY_OPA_DISP++, gLinkAdultHookshotTipDL);
         }
         Matrix_Translate(this->actor.world.pos.x, this->actor.world.pos.y, this->actor.world.pos.z, MTXMODE_NEW);
-        Math_Vec3f_Diff(&player->unk_3C8, &this->actor.world.pos, &sp78);
+        Math_Vec3f_Diff(ArmsHook_Origin(this, player), &this->actor.world.pos, &sp78);
         sp58 = SQ(sp78.x) + SQ(sp78.z);
         sp5C = sqrtf(sp58);
         Matrix_RotateY(Math_FAtan2F(sp78.x, sp78.z), MTXMODE_APPLY);
