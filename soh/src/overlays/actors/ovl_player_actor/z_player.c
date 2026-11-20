@@ -16206,6 +16206,18 @@ static void Player_VrHookshotGrappleStep(Player* this, PlayState* play) {
                     vel->x, vel->y, vel->z, this->actor.world.pos.y - this->actor.floorHeight);
     }
 
+    if (CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) == 2) {
+        // Both: the Spider-Man rope (and its tug, below), reeled with the move stick (unused on the rope):
+        // forward pulls toward the hook like Grapple and the rope follows; back lets rope out.
+        f32 stick = CLAMP(sControlInput->rel.stick_y / 60.0f, -1.0f, 1.0f);
+
+        if (stick > 0.2f) {
+            Player_VrVec3fAddScaled(vel, &n, stick * CVarGetFloat(CVAR_CHEAT("VrHookshotPull"), 3.0f));
+        } else if (stick < -0.2f) {
+            sVrHookRopeLen -= stick * CVarGetFloat(CVAR_CHEAT("VrHookshotReelOut"), 10.0f);
+        }
+    }
+
     if (CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) == 0) {
         // Grapple: accelerate toward the hook point; momentum carries everything else. Once within Min Rope
         // of it, stop pulling and hang there on a rope of that length (the shared rope below) until let go.
