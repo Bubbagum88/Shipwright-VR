@@ -10,8 +10,15 @@
 
 extern PlayState* gPlayState;
 
-static f32 sVrHookRopeLen = 0.0f;   // current rope length
-static s32 sVrHookTugging = false;  // a tug is in progress (one burst per tug)
+// One rope per hook: [0] the first (item-hand) hook, [1] the second (sword-hand) hook. The ropes share
+// nothing but Link's velocity: each adds its own acceleration and enforces its own length.
+typedef struct {
+    s32 active;  // this hook holds a point and Link is on its line
+    f32 len;     // current rope length
+    s32 tugging; // a tug is in progress (one burst per tug)
+} VrRope;
+
+static VrRope sRope[2];
 
 // ---- Dual hookshots ("VR Dual Hookshots", under the grapple cheat). The first hook is the vanilla
 // one in the item hand; the second (vrSecond) rides the sword hand. Each fires, holds and lets go
@@ -135,9 +142,12 @@ s32 VrHookshot_HangHookHome(Player* player) {
 
 // The hook just caught: the rope starts at the distance from the gun barrel to the hook point.
 void VrHookshot_OnCatch(Player* this) {
-    sVrHookRopeLen = Math_Vec3f_DistXYZ(ArmsHook_Origin((ArmsHook*)this->actor.parent, this),
-                                        &this->actor.parent->world.pos);
-    sVrHookTugging = false;
+    ArmsHook* hook = (ArmsHook*)this->actor.parent;
+    VrRope* rope = &sRope[hook->vrSecond ? 1 : 0];
+
+    rope->active = true;
+    rope->len = Math_Vec3f_DistXYZ(ArmsHook_Origin(hook, this), &hook->actor.world.pos);
+    rope->tugging = false;
 }
 
 // v += n * s. Used for every push along the rope, and for the wall push in z_player.c.
@@ -147,37 +157,28 @@ void VrHookshot_AddScaled(Vec3f* v, Vec3f* n, f32 s) {
     v->z += n->z * s;
 }
 
-// One tick of the rope pulling Link toward the hook point. Builds this tick's velocity; the hookshot
-// flying action (Player_Action_80850AEC) moves him by it as it always has. stickY is the move
-// stick's forward axis (sControlInput->rel.stick_y in z_player.c).
-void VrHookshot_RopeStep(Player* this, PlayState* play, s8 stickY) {
+// This rope's own acceleration (Grapple pull, Spider-Man tug, Both stick reel). Returns whether its
+// length limit applies this tick (Grapple doesn't hold Link to a length until it reaches Min Rope).
+static s32 VrHookshot_RopeAccel(Player* this, ArmsHook* hook, VrRope* rope, Vec3f* origin, s8 stickY, s32 log) {
     Vec3f* vel = &this->actor.velocity;
-    Vec3f n; // unit vector from Link toward the hook
-    Vec3f next;
-    f32 dist;
-    f32 speed;
-    f32 nextDist;
+    Vec3f n; // unit vector from the barrel toward the hook
+    f32 dist = Math_Vec3f_DistXYZAndStoreDiff(origin, &hook->actor.world.pos, &n);
+    s32 mode = CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0);
 
-    // The game's own player gravity, scaled by the Swing Gravity setting.
-    vel->y += REG(68) / 100.0f * CVarGetFloat(CVAR_CHEAT("VrHookshotGravity"), 1.0f);
-
-    ArmsHook* hook = (ArmsHook*)this->actor.parent;
-    Vec3f* origin = ArmsHook_Origin(hook, this);
-
-    dist = Math_Vec3f_DistXYZAndStoreDiff(origin, &this->actor.parent->world.pos, &n);
     // Never hand over to the vanilla pull while the trigger is held: its arrival stops Link dead (forward
     // speed 1, vertical 0) and drops him into the fall. He stays on the rope until he lets go.
     if (dist < 1.0f) {
-        return;
+        return false;
     }
     Math_Vec3f_Scale(&n, 1.0f / dist);
 
-    if ((play->gameplayFrames % 5) == 0) {
-        LUSLOG_INFO("[VrHook] rope: dist=%.0f len=%.0f vel=(%.1f, %.1f, %.1f) floor=%.0f", dist, sVrHookRopeLen,
-                    vel->x, vel->y, vel->z, this->actor.world.pos.y - this->actor.floorHeight);
+    if (log) {
+        LUSLOG_INFO("[VrHook] rope %s: dist=%.0f len=%.0f vel=(%.1f, %.1f, %.1f) floor=%.0f",
+                    hook->vrSecond ? "second" : "first", dist, rope->len, vel->x, vel->y, vel->z,
+                    this->actor.world.pos.y - this->actor.floorHeight);
     }
 
-    if (CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) == 2) {
+    if (mode == 2) {
         // Both: the Spider-Man rope (and its tug, below), reeled with the move stick (unused on the rope):
         // forward pulls toward the hook like Grapple and the rope follows; back lets rope out.
         f32 stick = CLAMP(stickY / 60.0f, -1.0f, 1.0f);
@@ -185,24 +186,24 @@ void VrHookshot_RopeStep(Player* this, PlayState* play, s8 stickY) {
         if (stick > 0.2f) {
             VrHookshot_AddScaled(vel, &n, stick * CVarGetFloat(CVAR_CHEAT("VrHookshotPull"), 3.0f));
         } else if (stick < -0.2f) {
-            sVrHookRopeLen -= stick * CVarGetFloat(CVAR_CHEAT("VrHookshotReelOut"), 10.0f);
+            rope->len -= stick * CVarGetFloat(CVAR_CHEAT("VrHookshotReelOut"), 10.0f);
         }
     }
 
-    if (CVarGetInteger(CVAR_CHEAT("VrHookshotMode"), 0) == 0) {
+    if (mode == 0) {
         // Grapple: accelerate toward the hook point; momentum carries everything else. Once within Min Rope
-        // of it, stop pulling and hang there on a rope of that length (the shared rope below) until let go.
+        // of it, stop pulling and hang there on a rope of that length until let go.
         f32 minRope = CVarGetFloat(CVAR_CHEAT("VrHookshotMinRope"), 50.0f);
 
-        if (sVrHookRopeLen > minRope) {
+        if (rope->len > minRope) {
             VrHookshot_AddScaled(vel, &n, CVarGetFloat(CVAR_CHEAT("VrHookshotPull"), 3.0f));
             if (dist > minRope) {
-                return;
+                return false;
             }
-            sVrHookRopeLen = minRope;
+            rope->len = minRope;
         }
     } else {
-        // Spider-Man: a fixed-length rope. A tug (the hook hand pulled back toward you) gives one burst
+        // Spider-Man: a fixed-length rope. A tug (this hook's hand pulled back toward you) gives one burst
         // along the rope and shortens it to where it ends up.
         Vec3f hand; // m/s, game axes
         f32 pull;
@@ -211,25 +212,32 @@ void VrHookshot_RopeStep(Player* this, PlayState* play, s8 stickY) {
         VrItemThrow_HandVelocity(VrHookshot_HookHand(hook), &hand.x);
         pull = -DOTXYZ(hand, n); // hand moving away from the hook
         if (pull > tugAt) {
-            if (!sVrHookTugging) {
+            if (!rope->tugging) {
                 VrHookshot_AddScaled(vel, &n,
-                                        pull * VrCombat_WorldScale() / 20.0f *
-                                            CVarGetFloat(CVAR_CHEAT("VrHookshotTug"), 1.0f));
-                sVrHookTugging = true;
+                                     pull * VrCombat_WorldScale() / 20.0f *
+                                         CVarGetFloat(CVAR_CHEAT("VrHookshotTug"), 1.0f));
+                rope->tugging = true;
             }
         } else if (pull < tugAt / 3.0f) {
-            sVrHookTugging = false;
+            rope->tugging = false;
         }
     }
+    return true;
+}
 
-    // The rope (Spider-Man always; Grapple once it has reeled in to Min Rope). Moved out of the
-    // Spider-Man branch unchanged.
-    speed = Math3D_Vec3fMagnitude(vel);
+// This rope's length limit (unchanged from the one-rope version). speed is Link's speed before any
+// rope limit this tick.
+static void VrHookshot_RopeLimit(Player* this, ArmsHook* hook, VrRope* rope, Vec3f* origin, f32 speed) {
+    Vec3f* vel = &this->actor.velocity;
+    Vec3f n;
+    Vec3f next;
+    f32 nextDist;
+
     Math_Vec3f_Sum(origin, vel, &next);
-    nextDist = Math_Vec3f_DistXYZAndStoreDiff(&next, &this->actor.parent->world.pos, &n);
-    if (nextDist < sVrHookRopeLen) {
+    nextDist = Math_Vec3f_DistXYZAndStoreDiff(&next, &hook->actor.world.pos, &n);
+    if (nextDist < rope->len) {
         // A tug or a swing upward took up the slack.
-        sVrHookRopeLen = MAX(nextDist, CVarGetFloat(CVAR_CHEAT("VrHookshotMinRope"), 50.0f));
+        rope->len = MAX(nextDist, CVarGetFloat(CVAR_CHEAT("VrHookshotMinRope"), 50.0f));
     } else if (nextDist > 0.0f) {
         f32 outward;
 
@@ -244,10 +252,66 @@ void VrHookshot_RopeStep(Player* this, PlayState* play, s8 stickY) {
             VrHookshot_AddScaled(vel, &n, outward);
             tangent = Math3D_Vec3fMagnitude(vel);
             if (tangent > 0.001f) {
-                Math_Vec3f_Scale(vel, MIN(speed, tangent * CVarGetFloat(CVAR_CHEAT("VrHookshotSwingCap"), 2.0f)) / tangent);
+                Math_Vec3f_Scale(vel, MIN(speed, tangent * CVarGetFloat(CVAR_CHEAT("VrHookshotSwingCap"), 2.0f)) /
+                                          tangent);
             }
         }
         // Pull back to rope length, so gravity can't stretch the rope a little every tick.
-        VrHookshot_AddScaled(vel, &n, nextDist - sVrHookRopeLen);
+        VrHookshot_AddScaled(vel, &n, nextDist - rope->len);
+    }
+}
+
+// One tick of the ropes pulling Link toward their hook points. Builds this tick's velocity; the
+// hookshot flying action (Player_Action_80850AEC) moves him by it as it always has. stickY is the
+// move stick's forward axis (sControlInput->rel.stick_y in z_player.c).
+//
+// With two hooks holding (dual hookshots): gravity once, each rope adds its own acceleration, then each
+// rope's length limit is applied in turn, twice, so neither ends up stretched by the other's correction.
+// Both taut swings Link on the arc around the line between the two points.
+void VrHookshot_RopeStep(Player* this, PlayState* play, s8 stickY) {
+    Vec3f* vel = &this->actor.velocity;
+    ArmsHook* hooks[2];
+    Vec3f* origins[2];
+    s32 limit[2] = { false, false };
+    s32 count = 0;
+    s32 log = (play->gameplayFrames % 5) == 0;
+    f32 speed;
+    s32 i;
+    s32 pass;
+
+    // The game's own player gravity, scaled by the Swing Gravity setting. Once, however many ropes.
+    vel->y += REG(68) / 100.0f * CVarGetFloat(CVAR_CHEAT("VrHookshotGravity"), 1.0f);
+
+    for (i = 0; i < 2; i++) {
+        hooks[i] = VrHookshot_FindHook(play, i);
+        if ((hooks[i] == NULL) || (hooks[i]->actor.child != &this->actor)) {
+            sRope[i].active = false; // not holding Link: its rope restarts on the next catch
+            hooks[i] = NULL;
+            continue;
+        }
+        origins[i] = ArmsHook_Origin(hooks[i], this);
+        if (!sRope[i].active) {
+            // Caught while Link was already on the other line.
+            sRope[i].active = true;
+            sRope[i].len = Math_Vec3f_DistXYZ(origins[i], &hooks[i]->actor.world.pos);
+            sRope[i].tugging = false;
+            LUSLOG_INFO("[VrHook] second rope on: %s hook, len=%.0f", i ? "second" : "first", sRope[i].len);
+        }
+        count++;
+    }
+
+    for (i = 0; i < 2; i++) {
+        if (hooks[i] != NULL) {
+            limit[i] = VrHookshot_RopeAccel(this, hooks[i], &sRope[i], origins[i], stickY, log);
+        }
+    }
+
+    speed = Math3D_Vec3fMagnitude(vel);
+    for (pass = 0; pass < ((count > 1) ? 2 : 1); pass++) {
+        for (i = 0; i < 2; i++) {
+            if (limit[i]) {
+                VrHookshot_RopeLimit(this, hooks[i], &sRope[i], origins[i], speed);
+            }
+        }
     }
 }
